@@ -1,70 +1,85 @@
-import { useState } from 'react';
+import { Moon, Sun, Workflow } from 'lucide-react';
 import { NavLink, Navigate, Route, Routes } from 'react-router-dom';
-import { FunnelPage } from '../funnel/FunnelPage';
-import { VersionsPage } from '../admin/VersionsPage';
-import { AnalyticsPage } from '../admin/AnalyticsPage';
-import { getAdminToken, setAdminToken } from '../lib/api';
+import { FunnelPage } from '@/funnel/FunnelPage';
+import { VersionsPage } from '@/admin/VersionsPage';
+import { AnalyticsPage } from '@/admin/AnalyticsPage';
+import { AdminTokenField } from '@/admin/AdminTokenField';
+import { Button } from '@/components/ui/button';
+import { useTheme } from '@/lib/theme';
+import { cn } from '@/lib/utils';
 
-const AdminLayout = ({ children }: { children: React.ReactNode }) => {
-  const [token, setToken] = useState(getAdminToken());
+const NAV = [
+  { to: '/', label: 'Воронка', end: true },
+  { to: '/admin/versions', label: 'Версии', end: false },
+  { to: '/admin/analytics', label: 'Аналитика', end: false },
+];
+
+const AdminLayout = ({ children }: { children: React.ReactNode }) => (
+  <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
+    <AdminTokenField />
+    {children}
+  </div>
+);
+
+export const App = () => {
+  const { theme, toggleTheme } = useTheme();
 
   return (
-    <div className="stack">
-      <section className="card card--tight">
-        <label className="field">
-          <span className="field__label">Админ-токен (только если задана переменная ADMIN_TOKEN)</span>
-          <input
-            className="input"
-            type="password"
-            value={token}
-            placeholder="оставьте пустым, если токен не задан"
-            onChange={(event) => {
-              setToken(event.target.value);
-              setAdminToken(event.target.value);
-            }}
+    <div className="flex min-h-screen flex-col">
+      <header className="bg-background/80 sticky top-0 z-10 border-b backdrop-blur-sm">
+        <div className="mx-auto flex w-full max-w-6xl items-center gap-4 px-4 py-3 sm:px-6">
+          <span className="flex items-center gap-2 font-semibold tracking-tight">
+            <Workflow className="size-4" aria-hidden />
+            Funnel Runtime
+          </span>
+
+          <nav className="flex flex-1 flex-wrap items-center gap-1">
+            {NAV.map((item, index) => (
+              <NavLink
+                key={index}
+                to={item.to}
+                end={item.end}
+                className={({ isActive }) =>
+                  cn(
+                    'text-muted-foreground hover:text-foreground rounded-md px-3 py-1.5 text-sm transition-colors',
+                    isActive && 'bg-accent text-accent-foreground',
+                  )
+                }
+              >
+                {item.label}
+              </NavLink>
+            ))}
+          </nav>
+
+          <Button variant="ghost" size="icon" onClick={toggleTheme} aria-label="Переключить тему">
+            {theme === 'dark' ? <Sun /> : <Moon />}
+          </Button>
+        </div>
+      </header>
+
+      <main className="w-full flex-1 px-4 py-8 sm:px-6">
+        <Routes>
+          <Route path="/" element={<FunnelPage />} />
+          <Route path="/admin" element={<Navigate to="/admin/versions" replace />} />
+          <Route
+            path="/admin/versions"
+            element={
+              <AdminLayout>
+                <VersionsPage />
+              </AdminLayout>
+            }
           />
-        </label>
-      </section>
-      {children}
+          <Route
+            path="/admin/analytics"
+            element={
+              <AdminLayout>
+                <AnalyticsPage />
+              </AdminLayout>
+            }
+          />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </main>
     </div>
   );
 };
-
-export const App = () => (
-  <div className="shell">
-    <header className="topbar">
-      <span className="topbar__brand">Funnel Runtime</span>
-      <nav className="topbar__nav">
-        <NavLink to="/" end>
-          Воронка
-        </NavLink>
-        <NavLink to="/admin/versions">Версии</NavLink>
-        <NavLink to="/admin/analytics">Аналитика</NavLink>
-      </nav>
-    </header>
-
-    <main className="content">
-      <Routes>
-        <Route path="/" element={<FunnelPage />} />
-        <Route path="/admin" element={<Navigate to="/admin/versions" replace />} />
-        <Route
-          path="/admin/versions"
-          element={
-            <AdminLayout>
-              <VersionsPage />
-            </AdminLayout>
-          }
-        />
-        <Route
-          path="/admin/analytics"
-          element={
-            <AdminLayout>
-              <AnalyticsPage />
-            </AdminLayout>
-          }
-        />
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    </main>
-  </div>
-);

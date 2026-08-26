@@ -5,6 +5,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="robots" content="noindex" />
     <title>Funnel Runtime</title>
+    <script>
+      (() => {
+        try {
+          const stored = localStorage.getItem('funnel.theme');
+          const dark = stored ? stored === 'dark' : !window.matchMedia('(prefers-color-scheme: light)').matches;
+          document.documentElement.classList.toggle('dark', dark);
+          document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
+        } catch {}
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

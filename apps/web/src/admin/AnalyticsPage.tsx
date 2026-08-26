@@ -1,62 +1,91 @@
 import { useCallback, useEffect, useState } from 'react';
+import { Activity, Filter, ShieldCheck, TrendingDown, TrendingUp } from 'lucide-react';
 import type { AnalyticsResponse, SegmentMetrics } from '@funnel/shared';
-import { request } from '../lib/api';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Label } from '@/components/ui/label';
+import { Progress } from '@/components/ui/progress';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { request } from '@/lib/api';
+import { cn } from '@/lib/utils';
+
+const ALL = '__all__';
+const NO_CAMPAIGN = '__none__';
 
 const percent = (value: number): string => `${(value * 100).toFixed(1)}%`;
 
-const uplift = (segments: SegmentMetrics[], metric: 'ctaCtr' | 'completionRate'): string => {
+const upliftOf = (segments: SegmentMetrics[], metric: 'ctaCtr' | 'completionRate'): number | null => {
   const control = segments.find((segment) => segment.key === 'A');
   const test = segments.find((segment) => segment.key === 'B');
-  if (!control || !test || control[metric] === 0) return '—';
-  const delta = (test[metric] - control[metric]) / control[metric];
-  return `${delta >= 0 ? '+' : ''}${(delta * 100).toFixed(1)}%`;
+  if (!control || !test || control[metric] === 0) return null;
+  return (test[metric] - control[metric]) / control[metric];
 };
 
-const SegmentTable = ({ title, rows, note }: { title: string; rows: SegmentMetrics[]; note?: string }) => (
-  <section className="card">
-    <h2 className="card__title">{title}</h2>
-    {note ? <p className="muted">{note}</p> : null}
-    <div className="table-scroll">
-      <table className="table">
-        <thead>
-          <tr>
-            <th>Сегмент</th>
-            <th>Сессий</th>
-            <th>Дошли до результата</th>
-            <th>Конверсия в результат</th>
-            <th>Кликов по CTA</th>
-            <th>CTR CTA</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row, index) => (
-            <tr key={index}>
-              <td>{row.label}</td>
-              <td>{row.sessions}</td>
-              <td>{row.reachedResult}</td>
-              <td>{percent(row.completionRate)}</td>
-              <td>{row.ctaClicks}</td>
-              <td className="strong">{percent(row.ctaCtr)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  </section>
+const formatUplift = (value: number | null): string =>
+  value === null ? '—' : `${value >= 0 ? '+' : ''}${(value * 100).toFixed(1)}%`;
+
+const Kpi = ({ label, value, hint }: { label: string; value: string; hint?: string }) => (
+  <Card>
+    <CardHeader className="gap-1">
+      <CardDescription>{label}</CardDescription>
+      <CardTitle className="text-3xl tabular-nums">{value}</CardTitle>
+      {hint ? <CardDescription className="text-xs">{hint}</CardDescription> : null}
+    </CardHeader>
+  </Card>
+);
+
+const SegmentTable = ({ title, description, rows }: { title: string; description?: string; rows: SegmentMetrics[] }) => (
+  <Card>
+    <CardHeader>
+      <CardTitle className="text-base">{title}</CardTitle>
+      {description ? <CardDescription>{description}</CardDescription> : null}
+    </CardHeader>
+    <CardContent>
+      <div className="overflow-x-auto">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Сегмент</TableHead>
+              <TableHead className="text-right">Сессий</TableHead>
+              <TableHead className="text-right">До результата</TableHead>
+              <TableHead className="text-right">Конверсия</TableHead>
+              <TableHead className="text-right">Кликов CTA</TableHead>
+              <TableHead className="text-right">CTR CTA</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {rows.map((row, index) => (
+              <TableRow key={index}>
+                <TableCell className="font-medium">{row.label}</TableCell>
+                <TableCell className="text-right tabular-nums">{row.sessions}</TableCell>
+                <TableCell className="text-right tabular-nums">{row.reachedResult}</TableCell>
+                <TableCell className="text-right tabular-nums">{percent(row.completionRate)}</TableCell>
+                <TableCell className="text-right tabular-nums">{row.ctaClicks}</TableCell>
+                <TableCell className="text-right font-medium tabular-nums">{percent(row.ctaCtr)}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+    </CardContent>
+  </Card>
 );
 
 export const AnalyticsPage = () => {
   const [data, setData] = useState<AnalyticsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [version, setVersion] = useState('');
-  const [variant, setVariant] = useState('');
-  const [campaign, setCampaign] = useState('');
+  const [version, setVersion] = useState(ALL);
+  const [variant, setVariant] = useState(ALL);
+  const [campaign, setCampaign] = useState(ALL);
 
   const load = useCallback(async () => {
     const params = new URLSearchParams();
-    if (version) params.set('version', version);
-    if (variant) params.set('variant', variant);
-    if (campaign) params.set('utm_campaign', campaign);
+    if (version !== ALL) params.set('version', version);
+    if (variant !== ALL) params.set('variant', variant);
+    if (campaign !== ALL) params.set('utm_campaign', campaign === NO_CAMPAIGN ? '' : campaign);
 
     try {
       const next = await request<AnalyticsResponse>(`/api/admin/analytics?${params.toString()}`, { admin: true });
@@ -71,217 +100,286 @@ export const AnalyticsPage = () => {
     void load();
   }, [load]);
 
-  if (error && !data) return <p className="error">{error}</p>;
-  if (!data) return <p>Считаем метрики…</p>;
+  if (error && !data) return <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>;
+  if (!data) {
+    return (
+      <div className="flex flex-col gap-6">
+        <Skeleton className="h-28 w-full rounded-xl" />
+        <Skeleton className="h-96 w-full rounded-xl" />
+      </div>
+    );
+  }
 
   const maxEntered = data.steps.reduce((max, step) => Math.max(max, step.entered), 0);
+  const ctrUplift = upliftOf(data.byVariant, 'ctaCtr');
 
   return (
-    <div className="stack">
-      <section className="card">
-        <h2 className="card__title">Фильтры</h2>
-        <div className="form-grid form-grid--three">
-          <label className="field">
-            <span className="field__label">Версия воронки</span>
-            <select className="input" value={version} onChange={(event) => setVersion(event.target.value)}>
-              <option value="">Все версии</option>
-              {data.available.versions.map((item, index) => (
-                <option key={index} value={String(item)}>
-                  Версия {item}
-                </option>
-              ))}
-            </select>
-          </label>
+    <div className="flex flex-col gap-6">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Filter className="size-4" aria-hidden />
+            Фильтры
+          </CardTitle>
+          <CardDescription>
+            Все показатели считаются по уникальным сессиям: повторные просмотры, возвраты назад и дубли событий
+            не увеличивают числа.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-4 sm:grid-cols-3">
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="f-version">Версия воронки</Label>
+            <Select value={version} onValueChange={setVersion}>
+              <SelectTrigger id="f-version">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL}>Все версии</SelectItem>
+                {data.available.versions.map((item, index) => (
+                  <SelectItem key={index} value={String(item)}>
+                    Версия {item}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
 
-          <label className="field">
-            <span className="field__label">Вариант эксперимента</span>
-            <select className="input" value={variant} onChange={(event) => setVariant(event.target.value)}>
-              <option value="">A и B</option>
-              {data.available.variants.map((item, index) => (
-                <option key={index} value={item}>
-                  Вариант {item}
-                </option>
-              ))}
-            </select>
-          </label>
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="f-variant">Вариант эксперимента</Label>
+            <Select value={variant} onValueChange={setVariant}>
+              <SelectTrigger id="f-variant">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL}>A и B</SelectItem>
+                {data.available.variants.map((item, index) => (
+                  <SelectItem key={index} value={item}>
+                    Вариант {item}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
 
-          <label className="field">
-            <span className="field__label">UTM campaign</span>
-            <select className="input" value={campaign} onChange={(event) => setCampaign(event.target.value)}>
-              <option value="">Все кампании</option>
-              {data.available.campaigns.map((item, index) => (
-                <option key={index} value={item}>
-                  {item === '' ? 'Без кампании' : item}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-        <p className="muted">
-          Все показатели считаются по уникальным сессиям: повторные просмотры, возвраты назад и дубли событий
-          не увеличивают числа.
-        </p>
-      </section>
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="f-campaign">UTM campaign</Label>
+            <Select value={campaign} onValueChange={setCampaign}>
+              <SelectTrigger id="f-campaign">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL}>Все кампании</SelectItem>
+                {data.available.campaigns.map((item, index) => (
+                  <SelectItem key={index} value={item === '' ? NO_CAMPAIGN : item}>
+                    {item === '' ? 'Без кампании' : item}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </CardContent>
+      </Card>
 
-      <section className="kpis">
-        <div className="card kpi">
-          <span className="kpi__label">Начали воронку</span>
-          <span className="metric">{data.overview.sessions}</span>
-        </div>
-        <div className="card kpi">
-          <span className="kpi__label">Дошли до результата</span>
-          <span className="metric">{data.overview.reachedResult}</span>
-          <span className="muted">{percent(data.overview.completionRate)}</span>
-        </div>
-        <div className="card kpi">
-          <span className="kpi__label">Кликнули CTA</span>
-          <span className="metric">{data.overview.ctaClicks}</span>
-          <span className="muted">{percent(data.overview.ctaCtr)}</span>
-        </div>
-        <div className="card kpi">
-          <span className="kpi__label">Uplift B к A по CTR</span>
-          <span className="metric">{uplift(data.byVariant, 'ctaCtr')}</span>
-          <span className="muted">основная метрика эксперимента</span>
-        </div>
-      </section>
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <Kpi label="Начали воронку" value={String(data.overview.sessions)} />
+        <Kpi
+          label="Дошли до результата"
+          value={String(data.overview.reachedResult)}
+          hint={percent(data.overview.completionRate)}
+        />
+        <Kpi label="Кликнули CTA" value={String(data.overview.ctaClicks)} hint={percent(data.overview.ctaCtr)} />
+        <Card>
+          <CardHeader className="gap-1">
+            <CardDescription>Uplift B к A по CTR</CardDescription>
+            <CardTitle
+              className={cn(
+                'flex items-center gap-2 text-3xl tabular-nums',
+                ctrUplift !== null && ctrUplift < 0 && 'text-destructive',
+              )}
+            >
+              {ctrUplift !== null ? (
+                ctrUplift >= 0 ? (
+                  <TrendingUp className="size-6" aria-hidden />
+                ) : (
+                  <TrendingDown className="size-6" aria-hidden />
+                )
+              ) : null}
+              {formatUplift(ctrUplift)}
+            </CardTitle>
+            <CardDescription className="text-xs">основная метрика эксперимента</CardDescription>
+          </CardHeader>
+        </Card>
+      </div>
 
-      <section className="card">
-        <h2 className="card__title">Воронка по шагам</h2>
-        <p className="muted">
-          «Дошли дальше»&nbsp;— сессии, которые после этого шага увидели любой следующий экран своего варианта
-          или результат. Отвал&nbsp;= вошли − дошли дальше. Для экрана результата «дошли дальше»&nbsp;—
-          это клик по&nbsp;CTA, то есть конверсия среди дошедших.
-        </p>
-        <div className="table-scroll">
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Шаг</th>
-                <th>Вошли</th>
-                <th>Ответили</th>
-                <th>Дошли дальше</th>
-                <th>Отвал</th>
-                <th>Конверсия дальше</th>
-                <th>Возвраты назад</th>
-                <th>Доля от старта</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.steps.map((step, index) => (
-                <tr key={index}>
-                  <td>
-                    <div className="strong">{step.title ?? step.stepId}</div>
-                    <div className="mono muted">{step.stepId}</div>
-                  </td>
-                  <td>
-                    <div className="bar">
-                      <div
-                        className="bar__fill"
-                        style={{ width: maxEntered === 0 ? '0%' : `${(step.entered / maxEntered) * 100}%` }}
-                      />
-                      <span>{step.entered}</span>
-                    </div>
-                  </td>
-                  <td>{step.completed}</td>
-                  <td>{step.continued}</td>
-                  <td className={step.dropoff > 0 ? 'warn' : ''}>{step.dropoff}</td>
-                  <td className="strong">{percent(step.conversionToNext)}</td>
-                  <td>{step.backClicks}</td>
-                  <td className="muted">{percent(step.conversionFromStart)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Воронка по шагам</CardTitle>
+          <CardDescription>
+            «Дошли дальше»&nbsp;— сессии, которые после этого шага увидели любой следующий экран своего варианта
+            или результат. Для экрана результата это клик по&nbsp;CTA, то есть конверсия среди дошедших.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Шаг</TableHead>
+                  <TableHead className="w-48">Вошли</TableHead>
+                  <TableHead className="text-right">Ответили</TableHead>
+                  <TableHead className="text-right">Дошли дальше</TableHead>
+                  <TableHead className="text-right">Отвал</TableHead>
+                  <TableHead className="text-right">Конверсия</TableHead>
+                  <TableHead className="text-right">Возвраты</TableHead>
+                  <TableHead className="text-right">От старта</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {data.steps.map((step, index) => (
+                  <TableRow key={index}>
+                    <TableCell>
+                      <div className="font-medium">{step.title ?? step.stepId}</div>
+                      <div className="text-muted-foreground flex items-center gap-2 font-mono text-xs">
+                        {step.stepId}
+                        {step.type ? (
+                          <Badge variant="outline" className="font-mono text-[10px] font-normal">
+                            {step.type}
+                          </Badge>
+                        ) : null}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-3">
+                        <Progress
+                          value={maxEntered === 0 ? 0 : (step.entered / maxEntered) * 100}
+                          className="h-1.5 w-24"
+                        />
+                        <span className="tabular-nums">{step.entered}</span>
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">{step.completed}</TableCell>
+                    <TableCell className="text-right tabular-nums">{step.continued}</TableCell>
+                    <TableCell
+                      className={cn('text-right tabular-nums', step.dropoff > 0 && 'text-destructive')}
+                    >
+                      {step.dropoff}
+                    </TableCell>
+                    <TableCell className="text-right font-medium tabular-nums">
+                      {percent(step.conversionToNext)}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">{step.backClicks}</TableCell>
+                    <TableCell className="text-muted-foreground text-right tabular-nums">
+                      {percent(step.conversionFromStart)}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
 
       <SegmentTable
         title="A/B: сравнение вариантов"
+        description={`Uplift B к A: CTR ${formatUplift(ctrUplift)}, конверсия в результат ${formatUplift(
+          upliftOf(data.byVariant, 'completionRate'),
+        )}`}
         rows={data.byVariant}
-        note={`Uplift B к A: CTR ${uplift(data.byVariant, 'ctaCtr')}, конверсия в результат ${uplift(data.byVariant, 'completionRate')}`}
       />
       <SegmentTable title="Сравнение версий воронки" rows={data.byVersion} />
 
-      <section className="card">
-        <h2 className="card__title">Распределение по экранам результата</h2>
-        <p className="muted">
-          Какой из результатов воронка выдала сессии по правилам <span className="mono">resultRules</span>.
-        </p>
-        <div className="table-scroll">
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Результат</th>
-                <th>Сессий</th>
-                <th>Кликов по CTA</th>
-                <th>CTR CTA</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.byResult.map((row, index) => (
-                <tr key={index}>
-                  <td>
-                    <div className="strong">{row.title ?? row.resultId}</div>
-                    <div className="mono muted">{row.resultId}</div>
-                  </td>
-                  <td>{row.sessions}</td>
-                  <td>{row.ctaClicks}</td>
-                  <td className="strong">{percent(row.ctaCtr)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Распределение по экранам результата</CardTitle>
+          <CardDescription>
+            Какой из результатов воронка выдала сессии по правилам <span className="font-mono">resultRules</span>.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Результат</TableHead>
+                  <TableHead className="text-right">Сессий</TableHead>
+                  <TableHead className="text-right">Кликов CTA</TableHead>
+                  <TableHead className="text-right">CTR CTA</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {data.byResult.map((row, index) => (
+                  <TableRow key={index}>
+                    <TableCell>
+                      <div className="font-medium">{row.title ?? row.resultId}</div>
+                      <div className="text-muted-foreground font-mono text-xs">{row.resultId}</div>
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">{row.sessions}</TableCell>
+                    <TableCell className="text-right tabular-nums">{row.ctaClicks}</TableCell>
+                    <TableCell className="text-right font-medium tabular-nums">{percent(row.ctaCtr)}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
+
       <SegmentTable title="Разрез по UTM campaign" rows={data.byCampaign} />
 
-      <section className="card">
-        <h2 className="card__title">События и качество данных</h2>
-        <div className="form-grid form-grid--three">
-          <div>
-            <span className="kpi__label">Событий в выборке</span>
-            <p className="metric">{data.dataQuality.events}</p>
-          </div>
-          <div>
-            <span className="kpi__label">Отброшено дублей при приёме</span>
-            <p className="metric">{data.dataQuality.duplicateAttempts}</p>
-          </div>
-          <div>
-            <span className="kpi__label">Отклонено некорректных</span>
-            <p className="metric">{data.dataQuality.rejectedEvents}</p>
-          </div>
-          <div>
-            <span className="kpi__label">Пришли не по порядку</span>
-            <p className="metric">{data.dataQuality.outOfOrderEvents}</p>
-          </div>
-          <div>
-            <span className="kpi__label">Сессий с возвратом назад</span>
-            <p className="metric">{data.dataQuality.sessionsWithBack}</p>
-          </div>
-        </div>
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <ShieldCheck className="size-4" aria-hidden />
+              Качество данных
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="grid grid-cols-2 gap-4 text-sm">
+            {[
+              ['Событий в выборке', data.dataQuality.events],
+              ['Отброшено дублей', data.dataQuality.duplicateAttempts],
+              ['Отклонено некорректных', data.dataQuality.rejectedEvents],
+              ['Пришли не по порядку', data.dataQuality.outOfOrderEvents],
+              ['Сессий с возвратом', data.dataQuality.sessionsWithBack],
+            ].map(([label, value], index) => (
+              <div key={index} className="flex flex-col">
+                <span className="text-muted-foreground text-xs">{label}</span>
+                <span className="text-xl font-medium tabular-nums">{value}</span>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
 
-        <div className="table-scroll">
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Тип события</th>
-                <th>Событий</th>
-                <th>Уникальных сессий</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.eventCounts.map((row, index) => (
-                <tr key={index}>
-                  <td className="mono">{row.name}</td>
-                  <td>{row.events}</td>
-                  <td>{row.sessions}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <p className="muted">Данные на {new Date(data.generated_at).toLocaleString('ru-RU')}</p>
-      </section>
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Activity className="size-4" aria-hidden />
+              События
+            </CardTitle>
+            <CardDescription>Данные на {new Date(data.generated_at).toLocaleString('ru-RU')}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Имя</TableHead>
+                  <TableHead className="text-right">Событий</TableHead>
+                  <TableHead className="text-right">Сессий</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {data.eventCounts.map((row, index) => (
+                  <TableRow key={index}>
+                    <TableCell className="font-mono text-xs">{row.name}</TableCell>
+                    <TableCell className="text-right tabular-nums">{row.events}</TableCell>
+                    <TableCell className="text-right tabular-nums">{row.sessions}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 };

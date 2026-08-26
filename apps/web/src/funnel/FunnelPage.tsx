@@ -1,10 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { UTM_KEYS, validateAnswer, type AnswerValue, type SessionView } from '@funnel/shared';
-import { ApiError, request } from '../lib/api';
-import { flush, flushOnUnload, initTracker, track } from '../lib/tracker';
+import { ApiError, request } from '@/lib/api';
+import { flush, flushOnUnload, initTracker, track } from '@/lib/tracker';
 import { ResultView } from './ResultView';
 import { StepView } from './StepView';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
+import { Progress } from '@/components/ui/progress';
+import { Skeleton } from '@/components/ui/skeleton';
+import { AlertCircle } from 'lucide-react';
+import { Link } from 'react-router-dom';
 
 const SESSION_KEY = 'funnel.session_id';
 
@@ -218,17 +224,34 @@ export const FunnelPage = () => {
 
   if (fatal) {
     return (
-      <section className="card">
-        <h1 className="step__title">Воронка недоступна</h1>
-        <p className="step__subtitle">{fatal}</p>
-        <p className="step__subtitle">
-          Проверьте, что активная версия опубликована на странице <a href="/admin/versions">управления версиями</a>.
-        </p>
-      </section>
+      <div className="mx-auto w-full max-w-xl">
+        <Alert variant="destructive">
+          <AlertCircle />
+          <AlertTitle>Воронка недоступна</AlertTitle>
+          <AlertDescription className="flex flex-col gap-2">
+            <span>{fatal}</span>
+            <span>
+              Проверьте, что активная версия опубликована на странице{' '}
+              <Link to="/admin/versions" className="underline underline-offset-4">
+                управления версиями
+              </Link>
+              .
+            </span>
+          </AlertDescription>
+        </Alert>
+      </div>
     );
   }
 
-  if (!view) return <section className="card">Загружаем воронку…</section>;
+  if (!view) {
+    return (
+      <div className="mx-auto flex w-full max-w-xl flex-col gap-4">
+        <Skeleton className="h-6 w-48" />
+        <Skeleton className="h-2 w-full" />
+        <Skeleton className="h-80 w-full rounded-xl" />
+      </div>
+    );
+  }
 
   const step = view.funnel.steps.find((candidate) => candidate.id === view.current_step_id);
   const isResult = step?.type === 'result';
@@ -236,20 +259,27 @@ export const FunnelPage = () => {
   const currentIndex = view.path.indexOf(view.current_step_id);
   const canGoBack = currentIndex > 0;
 
+  const goBack = () => {
+    const previous = view.path[Math.max(currentIndex - 1, 0)];
+    if (previous && previous !== view.current_step_id) goToStep(previous);
+  };
+
   return (
-    <div className="funnel">
-      <div className="funnel__meta">
-        <span className="badge">Версия {view.funnel_version}</span>
-        <span className="badge">Вариант {view.variant}</span>
-        <span className="badge badge--muted">{view.funnel.experimentId}</span>
+    <div className="mx-auto flex w-full max-w-xl flex-col gap-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge variant="outline">Версия {view.funnel_version}</Badge>
+        <Badge variant="outline">Вариант {view.variant}</Badge>
+        <Badge variant="secondary" className="font-mono text-[11px] font-normal">
+          {view.funnel.experimentId}
+        </Badge>
       </div>
 
-      <div className="progress" role="progressbar" aria-valuenow={percent} aria-valuemin={0} aria-valuemax={100}>
-        <div className="progress__bar" style={{ width: `${percent}%` }} />
+      <div className="flex flex-col gap-2">
+        <Progress value={percent} className="h-1.5" />
+        <p className="text-muted-foreground text-xs">
+          {isResult ? 'Результат' : `Шаг ${view.progress.index + 1} из ${view.progress.total}`}
+        </p>
       </div>
-      <p className="progress__label">
-        {isResult ? 'Результат' : `Шаг ${view.progress.index + 1} из ${view.progress.total}`}
-      </p>
 
       {isResult ? (
         <ResultView
@@ -265,10 +295,7 @@ export const FunnelPage = () => {
             void flush();
           }}
           onRestart={() => void handleRestart()}
-          onBack={() => {
-            const previous = view.path[Math.max(currentIndex - 1, 0)];
-            if (previous && previous !== view.current_step_id) goToStep(previous);
-          }}
+          onBack={goBack}
         />
       ) : step ? (
         <StepView
@@ -282,10 +309,7 @@ export const FunnelPage = () => {
             setStepError(null);
           }}
           onSubmit={() => void handleSubmit()}
-          onBack={() => {
-            const previous = view.path[Math.max(currentIndex - 1, 0)];
-            if (previous && previous !== view.current_step_id) goToStep(previous);
-          }}
+          onBack={goBack}
         />
       ) : null}
     </div>
