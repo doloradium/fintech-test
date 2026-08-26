@@ -24,9 +24,7 @@ export const setAdminToken = (token: string): void => {
   try {
     if (token) window.localStorage.setItem(ADMIN_TOKEN_KEY, token);
     else window.localStorage.removeItem(ADMIN_TOKEN_KEY);
-  } catch {
-    /* storage is unavailable, admin token simply will not persist */
-  }
+  } catch {}
 };
 
 export const request = async <T>(

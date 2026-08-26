@@ -106,9 +106,7 @@ const canonicalOrder = (db: Database, query: AnalyticsQuery, seenSteps: Set<stri
           order.push({ id: step.id, title: step.title });
         }
       }
-    } catch {
-      // version row disappeared or failed to parse: fall back to observed steps only
-    }
+    } catch {}
   }
 
   for (const stepId of [...seenSteps].sort()) {

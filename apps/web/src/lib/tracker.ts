@@ -33,9 +33,7 @@ const writeStorage = (): void => {
   try {
     if (queue.length === 0) window.localStorage.removeItem(STORAGE_KEY);
     else window.localStorage.setItem(STORAGE_KEY, JSON.stringify(queue));
-  } catch {
-    /* storage is unavailable, events stay in memory only */
-  }
+  } catch {}
 };
 
 const send = async (batch: QueuedEvent[]): Promise<boolean> => {
@@ -112,7 +110,5 @@ export const flushOnUnload = (): void => {
       type: 'application/json',
     });
     navigator.sendBeacon('/api/events', blob);
-  } catch {
-    /* beacon is best effort: unsent events are replayed from localStorage on the next load */
-  }
+  } catch {}
 };

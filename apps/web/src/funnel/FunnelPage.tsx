@@ -26,9 +26,7 @@ const writeSessionId = (id: string | null): void => {
   try {
     if (id) window.localStorage.setItem(SESSION_KEY, id);
     else window.localStorage.removeItem(SESSION_KEY);
-  } catch {
-    /* storage is unavailable: the session will not survive a reload */
-  }
+  } catch {}
 };
 
 const utmFromSearch = (search: string): Record<string, string | null> => {
