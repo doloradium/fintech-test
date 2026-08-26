@@ -1,0 +1,439 @@
+{
+  "schemaVersion": 1,
+  "funnelId": "renovation-quote",
+  "name": "Расчёт ремонта под ключ — итерация 2",
+  "experiment": {
+    "key": "budget_position_v1",
+    "hypothesis": "Вопрос о бюджете в конце воронки и более короткая анкета для варианта B снижают отвал в середине. Ожидаем рост доли сессий, дошедших до результата и нажавших CTA.",
+    "primaryMetric": "cta_ctr"
+  },
+  "extraEvents": [
+    "hint_opened"
+  ],
+  "steps": [
+    {
+      "id": "intro",
+      "type": "info",
+      "title": "Расчёт ремонта за 2 минуты",
+      "subtitle": "Десять коротких вопросов — и вы получите вилку стоимости, состав работ и сроки.",
+      "body": [
+        "Мы не звоним без запроса и не передаём контакты подрядчикам.",
+        "Расчёт предварительный: точная смета составляется после замера."
+      ],
+      "ctaLabel": "Начать расчёт"
+    },
+    {
+      "id": "property_type",
+      "type": "single_select",
+      "title": "Что ремонтируем?",
+      "subtitle": "От типа объекта зависит методика расчёта.",
+      "required": true,
+      "options": [
+        {
+          "value": "apartment",
+          "label": "Квартира",
+          "description": "Многоквартирный дом, любой этаж"
+        },
+        {
+          "value": "house",
+          "label": "Частный дом",
+          "description": "Коттедж, таунхаус, дача"
+        },
+        {
+          "value": "commercial",
+          "label": "Коммерческое помещение",
+          "description": "Офис, салон, кафе"
+        }
+      ],
+      "next": [
+        {
+          "when": {
+            "op": "eq",
+            "step": "property_type",
+            "value": "commercial"
+          },
+          "goto": "commercial_area"
+        },
+        {
+          "goto": "rooms"
+        }
+      ]
+    },
+    {
+      "id": "rooms",
+      "type": "number",
+      "title": "Сколько комнат нужно отремонтировать?",
+      "subtitle": "Считаем жилые комнаты без кухни и санузлов.",
+      "hint": "Студию считайте как одну комнату.",
+      "min": 1,
+      "max": 12,
+      "integer": true,
+      "unit": "комн.",
+      "placeholder": "3",
+      "required": true,
+      "next": [
+        {
+          "goto": "works"
+        }
+      ]
+    },
+    {
+      "id": "commercial_area",
+      "type": "number",
+      "title": "Какая площадь помещения?",
+      "subtitle": "Общая площадь по документам, включая подсобные зоны.",
+      "min": 10,
+      "max": 3000,
+      "integer": true,
+      "unit": "м²",
+      "placeholder": "120",
+      "required": true,
+      "next": [
+        {
+          "goto": "works"
+        }
+      ]
+    },
+    {
+      "id": "works",
+      "type": "multi_select",
+      "title": "Какие работы нужны?",
+      "subtitle": "Выберите всё, что планируете. Позже список можно изменить в переписке.",
+      "minSelected": 1,
+      "maxSelected": 6,
+      "options": [
+        {
+          "value": "demolition",
+          "label": "Демонтаж"
+        },
+        {
+          "value": "walls",
+          "label": "Стены и потолки"
+        },
+        {
+          "value": "floors",
+          "label": "Полы"
+        },
+        {
+          "value": "electrics",
+          "label": "Электрика"
+        },
+        {
+          "value": "plumbing",
+          "label": "Сантехника"
+        },
+        {
+          "value": "design",
+          "label": "Дизайн-проект"
+        }
+      ],
+      "next": [
+        {
+          "when": {
+            "op": "includes",
+            "step": "works",
+            "value": "design"
+          },
+          "goto": "design_style"
+        },
+        {
+          "goto": "property_state"
+        }
+      ],
+      "hint": "Дизайн-проект добавляет один короткий вопрос о стиле."
+    },
+    {
+      "id": "property_state",
+      "type": "single_select",
+      "title": "В каком состоянии объект?",
+      "required": true,
+      "options": [
+        {
+          "value": "new_raw",
+          "label": "Новостройка без отделки",
+          "description": "Голые стены, стяжки нет"
+        },
+        {
+          "value": "new_rough",
+          "label": "Новостройка с черновой отделкой"
+        },
+        {
+          "value": "secondary",
+          "label": "Вторичное жильё",
+          "description": "Нужен демонтаж старой отделки"
+        }
+      ]
+    },
+    {
+      "id": "budget",
+      "type": "single_select",
+      "title": "На какой бюджет ориентируетесь?",
+      "subtitle": "Ориентир по работам без учёта мебели, техники и чистовых материалов.",
+      "required": true,
+      "options": [
+        {
+          "value": "tier_1",
+          "label": "До 500 000 ₽"
+        },
+        {
+          "value": "tier_2",
+          "label": "500 000 — 1 500 000 ₽"
+        },
+        {
+          "value": "tier_3",
+          "label": "1 500 000 — 3 000 000 ₽"
+        },
+        {
+          "value": "tier_4",
+          "label": "Более 3 000 000 ₽"
+        }
+      ],
+      "next": [
+        {
+          "when": {
+            "op": "in",
+            "step": "budget",
+            "values": [
+              "tier_3",
+              "tier_4"
+            ]
+          },
+          "goto": "premium_info"
+        },
+        {
+          "goto": "timeline"
+        }
+      ]
+    },
+    {
+      "id": "premium_info",
+      "type": "info",
+      "title": "К проектам этого масштаба мы прикрепляем прораба",
+      "subtitle": "Отдельный человек ведёт объект от замера до приёмки.",
+      "body": [
+        "Еженедельный фотоотчёт и смета с фиксированной ценой работ.",
+        "Гарантия на работы — 3 года вместо стандартного года."
+      ],
+      "ctaLabel": "Понятно, дальше"
+    },
+    {
+      "id": "timeline",
+      "type": "single_select",
+      "title": "Когда планируете начать?",
+      "required": true,
+      "options": [
+        {
+          "value": "asap",
+          "label": "В ближайший месяц"
+        },
+        {
+          "value": "quarter",
+          "label": "Через 1–3 месяца"
+        },
+        {
+          "value": "half_year",
+          "label": "Через 3–6 месяцев"
+        },
+        {
+          "value": "unknown",
+          "label": "Пока просто изучаю цены"
+        }
+      ]
+    },
+    {
+      "id": "contact_time",
+      "type": "single_select",
+      "title": "Когда удобно обсудить расчёт?",
+      "subtitle": "Мы пишем в мессенджер и звоним только если вы попросите.",
+      "required": true,
+      "options": [
+        {
+          "value": "morning",
+          "label": "Утром, до 12:00"
+        },
+        {
+          "value": "day",
+          "label": "Днём, 12:00 — 18:00"
+        },
+        {
+          "value": "evening",
+          "label": "Вечером, после 18:00"
+        },
+        {
+          "value": "text_only",
+          "label": "Только перепиской"
+        }
+      ]
+    },
+    {
+      "id": "guarantee_info",
+      "type": "info",
+      "title": "Что вы получите вместе с расчётом",
+      "subtitle": "Прежде чем показать цифры — коротко о том, как мы работаем.",
+      "body": [
+        "Смета с фиксированной ценой работ на весь срок договора.",
+        "Еженедельный фотоотчёт и доступ к чату с прорабом.",
+        "Гарантия на работы от одного года."
+      ],
+      "ctaLabel": "Показать расчёт"
+    },
+    {
+      "id": "design_style",
+      "type": "single_select",
+      "title": "В каком стиле планируете интерьер?",
+      "subtitle": "Стиль влияет на подбор материалов и трудоёмкость отделки.",
+      "hint": "Если не определились — выберите «Ещё не решили», это не влияет на расчёт.",
+      "required": true,
+      "options": [
+        {
+          "value": "minimal",
+          "label": "Минимализм"
+        },
+        {
+          "value": "scandi",
+          "label": "Скандинавский"
+        },
+        {
+          "value": "classic",
+          "label": "Классика"
+        },
+        {
+          "value": "loft",
+          "label": "Лофт"
+        },
+        {
+          "value": "undecided",
+          "label": "Ещё не решили"
+        }
+      ],
+      "next": [
+        {
+          "goto": "property_state"
+        }
+      ]
+    }
+  ],
+  "result": {
+    "title": "Предварительный расчёт готов",
+    "subtitle": "Мы собрали вилку стоимости по вашим ответам.",
+    "body": [
+      "Точность предварительного расчёта — около 15%.",
+      "После бесплатного замера мы зафиксируем цену работ в договоре."
+    ],
+    "cta": {
+      "id": "primary",
+      "label": "Получить смету на почту",
+      "href": "#quote"
+    },
+    "secondaryNote": "Замер бесплатный и ни к чему не обязывает."
+  },
+  "variants": [
+    {
+      "key": "A",
+      "label": "Контроль: бюджет в середине",
+      "weight": 50,
+      "stepOrder": [
+        "intro",
+        "property_type",
+        "rooms",
+        "commercial_area",
+        "works",
+        "design_style",
+        "property_state",
+        "contact_time",
+        "budget",
+        "premium_info",
+        "timeline",
+        "guarantee_info"
+      ],
+      "overrides": {},
+      "result": {}
+    },
+    {
+      "key": "B",
+      "label": "Тест: бюджет в конце, без вопроса о состоянии объекта",
+      "weight": 50,
+      "stepOrder": [
+        "intro",
+        "property_type",
+        "rooms",
+        "commercial_area",
+        "works",
+        "design_style",
+        "contact_time",
+        "timeline",
+        "budget",
+        "premium_info",
+        "guarantee_info"
+      ],
+      "overrides": {
+        "intro": {
+          "title": "Узнайте стоимость ремонта без звонка менеджеру",
+          "subtitle": "Девять вопросов о вашем объекте — и вы увидите расчёт на экране."
+        },
+        "timeline": {
+          "title": "Когда планируете начать?",
+          "next": [
+            {
+              "goto": "budget"
+            }
+          ]
+        },
+        "budget": {
+          "title": "Последний вопрос: бюджет на работы",
+          "subtitle": "Мы подберём материалы под вашу вилку, а не наоборот.",
+          "next": [
+            {
+              "when": {
+                "op": "in",
+                "step": "budget",
+                "values": [
+                  "tier_3",
+                  "tier_4"
+                ]
+              },
+              "goto": "premium_info"
+            },
+            {
+              "goto": "guarantee_info"
+            }
+          ]
+        },
+        "contact_time": {
+          "title": "Как удобнее получить расчёт?",
+          "subtitle": "Выберите канал — пришлём смету туда."
+        },
+        "design_style": {
+          "next": [
+            {
+              "goto": "contact_time"
+            }
+          ]
+        },
+        "works": {
+          "next": [
+            {
+              "when": {
+                "op": "includes",
+                "step": "works",
+                "value": "design"
+              },
+              "goto": "design_style"
+            },
+            {
+              "goto": "contact_time"
+            }
+          ]
+        }
+      },
+      "result": {
+        "title": "Ваш расчёт готов",
+        "cta": {
+          "id": "primary",
+          "label": "Получить смету за 2 часа",
+          "href": "#quote"
+        }
+      }
+    }
+  ]
+}

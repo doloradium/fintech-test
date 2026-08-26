@@ -1,0 +1,29 @@
+{
+  "name": "funnel-runtime",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "npm run build --workspace @funnel/shared && npm-run-all --parallel dev:api dev:web",
+    "dev:api": "npm run dev --workspace @funnel/api",
+    "dev:web": "npm run dev --workspace @funnel/web",
+    "build": "npm run build --workspace @funnel/shared && npm run build --workspace @funnel/api && npm run build --workspace @funnel/web",
+    "start": "npm run start --workspace @funnel/api",
+    "seed": "npm run seed --workspace @funnel/api",
+    "test": "npm run test --workspace @funnel/api",
+    "typecheck": "tsc -b packages/shared apps/api && tsc -p apps/web --noEmit",
+    "reset": "rm -rf data",
+    "test:watch": "npm run test --workspace @funnel/api -- --watch"
+  },
+  "devDependencies": {
+    "npm-run-all2": "^8.0.4",
+    "typescript": "^5.9.3"
+  }
+}

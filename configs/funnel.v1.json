@@ -1,0 +1,210 @@
+{
+  "schemaVersion": 1,
+  "funnelId": "renovation-quote",
+  "name": "Расчёт ремонта под ключ",
+  "experiment": {
+    "key": "budget_position_v1",
+    "hypothesis": "Вопрос о бюджете в середине воронки пугает часть пользователей. Если перенести его в конец, доля сессий, дошедших до результата и нажавших CTA, вырастет.",
+    "primaryMetric": "cta_ctr"
+  },
+  "extraEvents": [],
+  "steps": [
+    {
+      "id": "intro",
+      "type": "info",
+      "title": "Расчёт ремонта за 2 минуты",
+      "subtitle": "Девять коротких вопросов — и вы получите вилку стоимости и состав работ.",
+      "body": [
+        "Мы не звоним без запроса и не передаём контакты подрядчикам.",
+        "Расчёт предварительный: точная смета составляется после замера."
+      ],
+      "ctaLabel": "Начать расчёт"
+    },
+    {
+      "id": "property_type",
+      "type": "single_select",
+      "title": "Что ремонтируем?",
+      "subtitle": "От типа объекта зависит методика расчёта.",
+      "required": true,
+      "options": [
+        { "value": "apartment", "label": "Квартира", "description": "Многоквартирный дом, любой этаж" },
+        { "value": "house", "label": "Частный дом", "description": "Коттедж, таунхаус, дача" },
+        { "value": "commercial", "label": "Коммерческое помещение", "description": "Офис, салон, кафе" }
+      ],
+      "next": [
+        { "when": { "op": "eq", "step": "property_type", "value": "commercial" }, "goto": "commercial_area" },
+        { "goto": "rooms" }
+      ]
+    },
+    {
+      "id": "rooms",
+      "type": "number",
+      "title": "Сколько комнат нужно отремонтировать?",
+      "subtitle": "Считаем жилые комнаты без кухни и санузлов.",
+      "hint": "Студию считайте как одну комнату.",
+      "min": 1,
+      "max": 12,
+      "integer": true,
+      "unit": "комн.",
+      "placeholder": "3",
+      "required": true,
+      "next": [{ "goto": "works" }]
+    },
+    {
+      "id": "commercial_area",
+      "type": "number",
+      "title": "Какая площадь помещения?",
+      "subtitle": "Общая площадь по документам, включая подсобные зоны.",
+      "min": 10,
+      "max": 3000,
+      "integer": true,
+      "unit": "м²",
+      "placeholder": "120",
+      "required": true,
+      "next": [{ "goto": "works" }]
+    },
+    {
+      "id": "works",
+      "type": "multi_select",
+      "title": "Какие работы нужны?",
+      "subtitle": "Выберите всё, что планируете. Список можно уточнить позже.",
+      "minSelected": 1,
+      "maxSelected": 6,
+      "options": [
+        { "value": "demolition", "label": "Демонтаж" },
+        { "value": "walls", "label": "Стены и потолки" },
+        { "value": "floors", "label": "Полы" },
+        { "value": "electrics", "label": "Электрика" },
+        { "value": "plumbing", "label": "Сантехника" },
+        { "value": "design", "label": "Дизайн-проект" }
+      ]
+    },
+    {
+      "id": "property_state",
+      "type": "single_select",
+      "title": "В каком состоянии объект?",
+      "required": true,
+      "options": [
+        { "value": "new_raw", "label": "Новостройка без отделки", "description": "Голые стены, стяжки нет" },
+        { "value": "new_rough", "label": "Новостройка с черновой отделкой" },
+        { "value": "secondary", "label": "Вторичное жильё", "description": "Нужен демонтаж старой отделки" }
+      ]
+    },
+    {
+      "id": "budget",
+      "type": "single_select",
+      "title": "На какой бюджет ориентируетесь?",
+      "subtitle": "Без учёта мебели и бытовой техники.",
+      "required": true,
+      "options": [
+        { "value": "tier_1", "label": "До 500 000 ₽" },
+        { "value": "tier_2", "label": "500 000 — 1 500 000 ₽" },
+        { "value": "tier_3", "label": "1 500 000 — 3 000 000 ₽" },
+        { "value": "tier_4", "label": "Более 3 000 000 ₽" }
+      ],
+      "next": [
+        { "when": { "op": "in", "step": "budget", "values": ["tier_3", "tier_4"] }, "goto": "premium_info" },
+        { "goto": "timeline" }
+      ]
+    },
+    {
+      "id": "premium_info",
+      "type": "info",
+      "title": "К проектам этого масштаба мы прикрепляем прораба",
+      "subtitle": "Отдельный человек ведёт объект от замера до приёмки.",
+      "body": [
+        "Еженедельный фотоотчёт и смета с фиксированной ценой работ.",
+        "Гарантия на работы — 3 года вместо стандартного года."
+      ],
+      "ctaLabel": "Понятно, дальше"
+    },
+    {
+      "id": "timeline",
+      "type": "single_select",
+      "title": "Когда планируете начать?",
+      "required": true,
+      "options": [
+        { "value": "asap", "label": "В ближайший месяц" },
+        { "value": "quarter", "label": "Через 1–3 месяца" },
+        { "value": "half_year", "label": "Через 3–6 месяцев" },
+        { "value": "unknown", "label": "Пока просто изучаю цены" }
+      ]
+    }
+  ],
+  "result": {
+    "title": "Предварительный расчёт готов",
+    "subtitle": "Мы собрали вилку стоимости по вашим ответам.",
+    "body": [
+      "Точность предварительного расчёта — около 15%.",
+      "После бесплатного замера мы зафиксируем цену работ в договоре."
+    ],
+    "cta": {
+      "id": "primary",
+      "label": "Получить смету на почту",
+      "href": "#quote"
+    },
+    "secondaryNote": "Замер бесплатный и ни к чему не обязывает."
+  },
+  "variants": [
+    {
+      "key": "A",
+      "label": "Контроль: бюджет в середине",
+      "weight": 50,
+      "stepOrder": [
+        "intro",
+        "property_type",
+        "rooms",
+        "commercial_area",
+        "works",
+        "property_state",
+        "budget",
+        "premium_info",
+        "timeline"
+      ],
+      "overrides": {},
+      "result": {}
+    },
+    {
+      "key": "B",
+      "label": "Тест: бюджет в конце",
+      "weight": 50,
+      "stepOrder": [
+        "intro",
+        "property_type",
+        "rooms",
+        "commercial_area",
+        "works",
+        "property_state",
+        "timeline",
+        "budget",
+        "premium_info"
+      ],
+      "overrides": {
+        "intro": {
+          "title": "Узнайте стоимость ремонта без звонка менеджеру",
+          "subtitle": "Девять вопросов о вашем объекте — и вы увидите расчёт на экране."
+        },
+        "timeline": {
+          "title": "Когда планируете начать?",
+          "next": [{ "goto": "budget" }]
+        },
+        "budget": {
+          "title": "Последний вопрос: бюджет на работы",
+          "subtitle": "Мы подберём материалы под вашу вилку, а не наоборот.",
+          "next": [
+            { "when": { "op": "in", "step": "budget", "values": ["tier_3", "tier_4"] }, "goto": "premium_info" },
+            { "goto": "@result" }
+          ]
+        }
+      },
+      "result": {
+        "title": "Ваш расчёт готов",
+        "cta": {
+          "id": "primary",
+          "label": "Получить смету за 2 часа",
+          "href": "#quote"
+        }
+      }
+    }
+  ]
+}
