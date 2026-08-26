@@ -10,7 +10,7 @@ import {
   type StepType,
   type VariantKey,
 } from './funnel-config.js';
-import { evaluateCondition, isAnswered, type AnswerValue, type Answers } from './conditions.js';
+import { evaluateCondition, isAnswered, isDecidable, type AnswerValue, type Answers } from './conditions.js';
 
 export type ResolvedFunnel = {
   funnelId: string;
@@ -122,28 +122,43 @@ export const getPreviousStepId = (funnel: ResolvedFunnel, currentStepId: string,
   return visible[index - 1]?.id ?? null;
 };
 
-export const countedSteps = (funnel: ResolvedFunnel, answers: Answers): Step[] => {
-  const pool = funnel.progress.countVisibleOnly ? visibleSteps(funnel, answers) : funnel.steps;
-  return pool.filter((step) => !funnel.progress.excludeTypes.includes(step.type));
+export const mayBecomeVisible = (step: Step, answers: Answers): boolean =>
+  !step.visibleWhen || !isDecidable(step.visibleWhen, answers) || evaluateCondition(step.visibleWhen, answers);
+
+export const isCountedStep = (funnel: ResolvedFunnel, step: Step): boolean =>
+  !funnel.progress.excludeTypes.includes(step.type);
+
+export const countedSteps = (funnel: ResolvedFunnel, answers: Answers): Step[] =>
+  funnel.steps.filter(
+    (step) =>
+      isCountedStep(funnel, step) && (!funnel.progress.countVisibleOnly || mayBecomeVisible(step, answers)),
+  );
+
+const answersBefore = (funnel: ResolvedFunnel, answers: Answers, cutoff: number): Answers => {
+  const scoped: Answers = {};
+  funnel.steps.forEach((step, index) => {
+    if (index < cutoff && answers[step.id] !== undefined) scoped[step.id] = answers[step.id];
+  });
+  return scoped;
 };
 
 export const computeProgress = (
   funnel: ResolvedFunnel,
   answers: Answers,
   currentStepId: string,
-): { index: number; total: number; ratio: number; path: string[] } => {
-  const visible = visibleSteps(funnel, answers);
-  const path = visible.map((step) => step.id);
-  const counted = countedSteps(funnel, answers);
+): { index: number; total: number; ratio: number; path: string[]; counted: boolean } => {
+  const path = visibleStepIds(funnel, answers);
+  const cutoff = funnel.steps.findIndex((step) => step.id === currentStepId);
+  const current = cutoff === -1 ? undefined : funnel.steps[cutoff];
+
+  if (!current) return { index: 0, total: countedSteps(funnel, answers).length, ratio: 0, path, counted: false };
+
+  const counted = countedSteps(funnel, answersBefore(funnel, answers, cutoff));
   const total = counted.length;
-  const position = path.indexOf(currentStepId);
-
-  if (position === -1) return { index: 0, total, ratio: 0, path };
-
-  const index = counted.filter((step) => path.indexOf(step.id) < position).length;
+  const index = counted.filter((step) => funnel.steps.indexOf(step) < cutoff).length;
   const ratio = total === 0 ? 1 : Math.min(index / total, 1);
 
-  return { index, total, ratio, path };
+  return { index, total, ratio, path, counted: isCountedStep(funnel, current) };
 };
 
 export const resolveResultId = (funnel: ResolvedFunnel, answers: Answers): string => {

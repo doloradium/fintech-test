@@ -7,6 +7,7 @@ export type SessionProgress = {
   index: number;
   total: number;
   ratio: number;
+  counted: boolean;
 };
 
 export type SessionView = {

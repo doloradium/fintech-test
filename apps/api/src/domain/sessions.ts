@@ -95,7 +95,7 @@ export const buildSessionView = (db: Database, row: SessionRow): SessionView => 
     current_step_id: row.current_step_id,
     result_id: onResult ? (row.result_id ?? resolveResultId(funnel, answers)) : null,
     path: progress.path,
-    progress: { index: progress.index, total: progress.total, ratio: progress.ratio },
+    progress: { index: progress.index, total: progress.total, ratio: progress.ratio, counted: progress.counted },
     answers,
     utm: utmOf(row),
     funnel,

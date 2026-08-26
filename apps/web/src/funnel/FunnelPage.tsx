@@ -277,7 +277,11 @@ export const FunnelPage = () => {
       <div className="flex flex-col gap-2">
         <Progress value={percent} className="h-1.5" />
         <p className="text-muted-foreground text-xs">
-          {isResult ? 'Результат' : `Шаг ${view.progress.index + 1} из ${view.progress.total}`}
+          {isResult
+            ? 'Результат'
+            : view.progress.counted
+              ? `Шаг ${view.progress.index + 1} из ${view.progress.total}`
+              : 'Введение'}
         </p>
       </div>
 

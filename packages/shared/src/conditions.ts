@@ -129,3 +129,15 @@ export const evaluateCondition = (condition: Condition, answers: Answers): boole
   if ('not' in condition) return !evaluateCondition(condition.not, answers);
   return evaluateLeaf(condition, answers);
 };
+
+export const referencedAnswers = (condition: Condition, into: Set<string> = new Set()): Set<string> => {
+  if ('all' in condition) condition.all.forEach((child) => referencedAnswers(child, into));
+  else if ('any' in condition) condition.any.forEach((child) => referencedAnswers(child, into));
+  else if ('none' in condition) condition.none.forEach((child) => referencedAnswers(child, into));
+  else if ('not' in condition) referencedAnswers(condition.not, into);
+  else if (condition.operator !== 'isAnswered' && condition.operator !== 'isEmpty') into.add(condition.answer);
+  return into;
+};
+
+export const isDecidable = (condition: Condition, answers: Answers): boolean =>
+  [...referencedAnswers(condition)].every((stepId) => isAnswered(answers[stepId]));

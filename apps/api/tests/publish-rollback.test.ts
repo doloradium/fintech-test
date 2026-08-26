@@ -1,12 +1,15 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import type { VersionsResponse } from '@funnel/shared';
+import type { SessionView, VersionsResponse } from '@funnel/shared';
 import {
   activate,
   answer,
   createSession,
   createTestApp,
+  defaultAnswerFor,
+  isResultStep,
   json,
   publish,
+  stepOf,
   walkToResult,
   type TestApp,
 } from './helpers.js';
@@ -101,19 +104,80 @@ describe('публикация и откат версии', () => {
     expect(withBranch.current_step_id).toBe('meeting_load');
   });
 
-  it('видимость шага меняет знаменатель прогресса', async () => {
+  it('условная ветка учитывается в знаменателе прогресса, пока не исключена ответом', async () => {
     let view = await createSession(ctx.app, '?variant=A');
-    const initialTotal = view.progress.total;
+    const optimisticTotal = view.progress.total;
 
     view = await answer(ctx.app, view.session_id, 'intro', true);
     view = await answer(ctx.app, view.session_id, 'team_size', 8);
-    const hybrid = await answer(ctx.app, view.session_id, 'work_mode', 'hybrid');
 
+    const hybrid = await answer(ctx.app, view.session_id, 'work_mode', 'hybrid');
     expect(hybrid.path).toContain('office_days');
-    expect(hybrid.progress.total).toBe(initialTotal + 1);
+    expect(hybrid.progress.total).toBe(optimisticTotal);
 
     const remote = await answer(ctx.app, view.session_id, 'work_mode', 'remote');
     expect(remote.path).not.toContain('office_days');
-    expect(remote.progress.total).toBe(initialTotal);
+    expect(remote.progress.total).toBe(optimisticTotal - 1);
+  });
+
+  it('прогресс не уезжает назад при движении вперёд', async () => {
+    for (const [variant, mode] of [
+      ['A', 'remote'],
+      ['A', 'hybrid'],
+      ['B', 'hybrid'],
+    ] as Array<[string, string]>) {
+      let view = await createSession(ctx.app, `?variant=${variant}`);
+      const seen: number[] = [];
+      let guard = 0;
+
+      while (!isResultStep(view) && guard < 20) {
+        guard += 1;
+        seen.push(view.progress.ratio);
+        const step = stepOf(view, view.current_step_id);
+        const value = step.id === 'work_mode' ? mode : defaultAnswerFor(view, step.id);
+        view = await answer(ctx.app, view.session_id, step.id, value);
+      }
+
+      seen.forEach((ratio, index) => {
+        if (index === 0) return;
+        expect(ratio, `${variant}/${mode} на шаге ${index}`).toBeGreaterThanOrEqual(seen[index - 1] ?? 0);
+      });
+    }
+  });
+
+  it('возврат назад показывает тот же прогресс, что и первый визит на шаг', async () => {
+    let view = await createSession(ctx.app, '?variant=A');
+    view = await answer(ctx.app, view.session_id, 'intro', true);
+    view = await answer(ctx.app, view.session_id, 'team_size', 10);
+
+    const onWorkMode = { ...view.progress };
+    expect(view.current_step_id).toBe('work_mode');
+
+    view = await answer(ctx.app, view.session_id, 'work_mode', 'hybrid');
+    expect(view.progress.ratio).toBeGreaterThan(onWorkMode.ratio);
+
+    const back = json<SessionView>(
+      (
+        await ctx.app.inject({
+          method: 'POST',
+          url: `/api/sessions/${view.session_id}/navigate`,
+          payload: { step_id: 'work_mode' },
+        })
+      ).body,
+    );
+
+    expect(back.progress.index).toBe(onWorkMode.index);
+    expect(back.progress.total).toBe(onWorkMode.total);
+    expect(back.progress.ratio).toBe(onWorkMode.ratio);
+  });
+
+  it('служебные экраны не участвуют в нумерации шагов', async () => {
+    const view = await createSession(ctx.app, '?variant=A');
+    expect(stepOf(view, view.current_step_id).type).toBe('info');
+    expect(view.progress.counted).toBe(false);
+
+    const next = await answer(ctx.app, view.session_id, view.current_step_id, true);
+    expect(next.progress.counted).toBe(true);
+    expect(next.progress.index).toBe(0);
   });
 });
