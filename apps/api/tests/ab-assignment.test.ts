@@ -1,6 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import type { SessionView } from '@funnel/shared';
-import { createSession, createTestApp, json, type TestApp } from './helpers.js';
+import { createSession, createTestApp, readSession, sendEvents, event, type TestApp } from './helpers.js';
 
 describe('стабильность A/B-варианта', () => {
   let ctx: TestApp;
@@ -19,70 +18,61 @@ describe('стабильность A/B-варианта', () => {
     expect(session.variant_source).toBe('assigned');
 
     for (let i = 0; i < 5; i += 1) {
-      const reread = json<SessionView>(
-        (await ctx.app.inject({ method: 'GET', url: `/api/sessions/${session.session_id}` })).body,
-      );
-      expect(reread.variant).toBe(session.variant);
+      expect((await readSession(ctx.app, session.session_id)).variant).toBe(session.variant);
     }
   });
 
   it('override через query-параметр фиксируется в сессии', async () => {
-    const forced = json<SessionView>(
-      (await ctx.app.inject({ method: 'POST', url: '/api/sessions?variant=B', payload: {} })).body,
-    );
-
+    const forced = await createSession(ctx.app, '?variant=B');
     expect(forced.variant).toBe('B');
     expect(forced.variant_source).toBe('override');
-
-    const reread = json<SessionView>(
-      (await ctx.app.inject({ method: 'GET', url: `/api/sessions/${forced.session_id}` })).body,
-    );
-    expect(reread.variant).toBe('B');
+    expect((await readSession(ctx.app, forced.session_id)).variant).toBe('B');
   });
 
   it('распределение задействует оба варианта', async () => {
     const variants = new Set<string>();
-    for (let i = 0; i < 40; i += 1) {
-      variants.add((await createSession(ctx.app)).variant);
-    }
+    for (let i = 0; i < 40; i += 1) variants.add((await createSession(ctx.app)).variant);
     expect([...variants].sort()).toEqual(['A', 'B']);
   });
 
-  it('варианты отдают разный порядок шагов и разный экран результата', async () => {
-    const a = json<SessionView>(
-      (await ctx.app.inject({ method: 'POST', url: '/api/sessions?variant=A', payload: {} })).body,
-    );
-    const b = json<SessionView>(
-      (await ctx.app.inject({ method: 'POST', url: '/api/sessions?variant=B', payload: {} })).body,
-    );
+  it('варианты меняют порядок шагов, тексты и экран результата', async () => {
+    const a = await createSession(ctx.app, '?variant=A');
+    const b = await createSession(ctx.app, '?variant=B');
 
     expect(a.funnel.steps.map((step) => step.id)).not.toEqual(b.funnel.steps.map((step) => step.id));
-    expect(a.funnel.result.cta.label).not.toBe(b.funnel.result.cta.label);
+    expect(a.funnel.steps[0]?.content.title).not.toBe(b.funnel.steps[0]?.content.title);
+    expect(a.funnel.results.async_native?.cta.label).not.toBe(b.funnel.results.async_native?.cta.label);
+    expect(a.funnel.results.async_native?.title).not.toBe(b.funnel.results.async_native?.title);
   });
 
-  it('все события сессии несут версию воронки и вариант', async () => {
+  it('все события несут версию воронки, вариант и id эксперимента', async () => {
     const session = await createSession(ctx.app);
-    await ctx.app.inject({
-      method: 'POST',
-      url: '/api/events',
-      payload: {
-        events: [
-          {
-            event_id: `${session.session_id}-started`,
-            session_id: session.session_id,
-            type: 'session_started',
-            client_ts: new Date().toISOString(),
-          },
-        ],
-      },
-    });
+    await sendEvents(ctx.app, [event(session.session_id, 'session_started')]);
 
     const stored = ctx.db
-      .prepare('SELECT funnel_version, variant FROM events WHERE session_id = ?')
-      .all(session.session_id) as unknown as Array<{ funnel_version: number; variant: string }>;
+      .prepare('SELECT funnel_id, funnel_version, experiment_id, variant FROM events WHERE session_id = ?')
+      .all(session.session_id) as unknown as Array<{
+      funnel_id: string;
+      funnel_version: number;
+      experiment_id: string;
+      variant: string;
+    }>;
 
     expect(stored).toHaveLength(1);
-    expect(stored[0]?.funnel_version).toBe(session.funnel_version);
-    expect(stored[0]?.variant).toBe(session.variant);
+    expect(stored[0]).toEqual({
+      funnel_id: session.funnel_id,
+      funnel_version: session.funnel_version,
+      experiment_id: session.experiment_id,
+      variant: session.variant,
+    });
+  });
+
+  it('вариант назначается детерминированно: одна и та же сессия даёт тот же бакет', async () => {
+    const first = await createSession(ctx.app);
+    const reread = await readSession(ctx.app, first.session_id);
+    const row = ctx.db.prepare('SELECT variant FROM sessions WHERE id = ?').get(first.session_id) as { variant: string };
+
+    expect(reread.variant).toBe(first.variant);
+    expect(row.variant).toBe(first.variant);
   });
 });

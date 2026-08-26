@@ -12,12 +12,11 @@ describe('дедупликация событий', () => {
     await ctx.close();
   });
 
-  const countEvents = (sessionId: string): number => {
-    const row = ctx.db.prepare('SELECT COUNT(*) AS total FROM events WHERE session_id = ?').get(sessionId) as {
-      total: number;
-    };
-    return Number(row.total);
-  };
+  const countEvents = (sessionId: string): number =>
+    Number(
+      (ctx.db.prepare('SELECT COUNT(*) AS total FROM events WHERE session_id = ?').get(sessionId) as { total: number })
+        .total,
+    );
 
   it('повторная отправка одного event_id не создаёт дубль', async () => {
     const session = await createSession(ctx.app);
@@ -65,37 +64,79 @@ describe('дедупликация событий', () => {
 
     const result = await sendEvents(ctx.app, [
       event(session.session_id, 'step_viewed', 'intro'),
-      { event_id: 'short', session_id: session.session_id, type: 'step_viewed', client_ts: 'не дата' },
+      { event_id: 'short', session_id: session.session_id, name: 'step_viewed', client_timestamp: 'не дата' },
       event('00000000-0000-0000-0000-000000000000', 'step_viewed', 'intro'),
       event(session.session_id, 'step_viewed'),
-      event(session.session_id, 'totally_unknown_event'),
+      event(session.session_id, 'recommendation_expanded', 'result'),
+      event(session.session_id, 'step_viewed', 'no_such_step'),
       event(session.session_id, 'step_completed', 'intro'),
     ]);
 
     expect(result.accepted).toBe(2);
-    expect(result.rejected).toHaveLength(4);
     expect(result.rejected.map((item) => (item as { reason: string }).reason.split(':')[0])).toEqual([
       'validation_failed',
       'unknown_session',
       'missing_step_id',
-      'unknown_event_type',
+      'unknown_event_name',
+      'unknown_step',
     ]);
     expect(countEvents(session.session_id)).toBe(2);
   });
 
-  it('сырые ответы пользователя не попадают в таблицу событий', async () => {
+  it('событие принимается только если объявлено в конфиге своей версии', async () => {
+    const session = await createSession(ctx.app);
+
+    const beforePublish = await sendEvents(ctx.app, [
+      event(session.session_id, 'recommendation_expanded', 'result', { properties: { result_id: 'balanced' } }),
+    ]);
+    expect(beforePublish.accepted).toBe(0);
+
+    await ctx.app.inject({ method: 'POST', url: '/api/admin/versions', payload: { file: 'funnel-v2.json' } });
+
+    const onNewVersion = await createSession(ctx.app);
+    const afterPublish = await sendEvents(ctx.app, [
+      event(onNewVersion.session_id, 'recommendation_expanded', 'result', { properties: { result_id: 'balanced' } }),
+    ]);
+    expect(afterPublish.accepted).toBe(1);
+  });
+
+  it('в событие попадают только свойства, объявленные конфигом', async () => {
     const session = await createSession(ctx.app);
 
     await sendEvents(ctx.app, [
-      event(session.session_id, 'answer_submitted', 'intro', {
-        props: { value_type: 'boolean', value: 'секретный ответ', phone: '+7 900 000-00-00' },
+      event(session.session_id, 'answer_submitted', 'team_size', {
+        properties: { answer_kind: 'number', value: 42, raw_answer: 'секрет', email: 'a@b.c' },
       }),
     ]);
 
     const row = ctx.db
-      .prepare("SELECT props_json FROM events WHERE session_id = ? AND type = 'answer_submitted'")
-      .get(session.session_id) as { props_json: string | null };
+      .prepare("SELECT properties_json FROM events WHERE session_id = ? AND name = 'answer_submitted'")
+      .get(session.session_id) as { properties_json: string | null };
 
-    expect(row.props_json).toBe('{"value_type":"boolean"}');
+    expect(row.properties_json).toBe('{"answer_kind":"number"}');
+  });
+
+  it('сырые ответы хранятся отдельно от событий', async () => {
+    const session = await createSession(ctx.app, '?variant=A');
+    await ctx.app.inject({
+      method: 'POST',
+      url: `/api/sessions/${session.session_id}/answer`,
+      payload: { step_id: 'intro', value: true },
+    });
+    await ctx.app.inject({
+      method: 'POST',
+      url: `/api/sessions/${session.session_id}/answer`,
+      payload: { step_id: 'team_size', value: 42 },
+    });
+
+    const answers = ctx.db
+      .prepare('SELECT value_json FROM session_answers WHERE session_id = ? AND step_id = ?')
+      .get(session.session_id, 'team_size') as { value_json: string };
+    expect(answers.value_json).toBe('42');
+
+    const leaked = ctx.db
+      .prepare("SELECT COUNT(*) AS total FROM events WHERE session_id = ? AND properties_json LIKE '%42%'")
+      .get(session.session_id) as { total: number };
+    expect(Number(leaked.total)).toBe(0);
   });
 });

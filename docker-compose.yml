@@ -5,7 +5,7 @@ services:
       - '3000:3000'
     environment:
       DATA_DIR: /data
-      BOOTSTRAP_CONFIG: funnel.v1.json
+      BOOTSTRAP_CONFIG: funnel-v1.json
       EXPERIMENT_SALT: funnel-runtime
     volumes:
       - funnel-data:/data

@@ -1,11 +1,11 @@
 type QueuedEvent = {
   event_id: string;
   session_id: string;
-  type: string;
+  name: string;
   step_id: string | null;
-  client_ts: string;
+  client_timestamp: string;
   seq: number;
-  props?: Record<string, unknown>;
+  properties?: Record<string, unknown>;
 };
 
 const STORAGE_KEY = 'funnel.event_queue';
@@ -83,18 +83,22 @@ export const initTracker = (id: string): void => {
   if (queue.length > 0) void flush();
 };
 
-export const track = (type: string, stepId: string | null = null, props?: Record<string, unknown>): void => {
+export const track = (
+  name: string,
+  stepId: string | null = null,
+  properties?: Record<string, unknown>,
+): void => {
   if (!sessionId) return;
   seq += 1;
 
   queue.push({
     event_id: crypto.randomUUID(),
     session_id: sessionId,
-    type,
+    name,
     step_id: stepId,
-    client_ts: new Date().toISOString(),
+    client_timestamp: new Date().toISOString(),
     seq,
-    ...(props ? { props } : {}),
+    ...(properties ? { properties } : {}),
   });
 
   writeStorage();

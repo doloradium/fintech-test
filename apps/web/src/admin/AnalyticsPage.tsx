@@ -149,7 +149,8 @@ export const AnalyticsPage = () => {
         <h2 className="card__title">Воронка по шагам</h2>
         <p className="muted">
           «Дошли дальше»&nbsp;— сессии, которые после этого шага увидели любой следующий экран своего варианта
-          или результат. Отвал&nbsp;= вошли − дошли дальше.
+          или результат. Отвал&nbsp;= вошли − дошли дальше. Для экрана результата «дошли дальше»&nbsp;—
+          это клик по&nbsp;CTA, то есть конверсия среди дошедших.
         </p>
         <div className="table-scroll">
           <table className="table">
@@ -200,6 +201,38 @@ export const AnalyticsPage = () => {
         note={`Uplift B к A: CTR ${uplift(data.byVariant, 'ctaCtr')}, конверсия в результат ${uplift(data.byVariant, 'completionRate')}`}
       />
       <SegmentTable title="Сравнение версий воронки" rows={data.byVersion} />
+
+      <section className="card">
+        <h2 className="card__title">Распределение по экранам результата</h2>
+        <p className="muted">
+          Какой из результатов воронка выдала сессии по правилам <span className="mono">resultRules</span>.
+        </p>
+        <div className="table-scroll">
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Результат</th>
+                <th>Сессий</th>
+                <th>Кликов по CTA</th>
+                <th>CTR CTA</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.byResult.map((row, index) => (
+                <tr key={index}>
+                  <td>
+                    <div className="strong">{row.title ?? row.resultId}</div>
+                    <div className="mono muted">{row.resultId}</div>
+                  </td>
+                  <td>{row.sessions}</td>
+                  <td>{row.ctaClicks}</td>
+                  <td className="strong">{percent(row.ctaCtr)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
       <SegmentTable title="Разрез по UTM campaign" rows={data.byCampaign} />
 
       <section className="card">
@@ -239,7 +272,7 @@ export const AnalyticsPage = () => {
             <tbody>
               {data.eventCounts.map((row, index) => (
                 <tr key={index}>
-                  <td className="mono">{row.type}</td>
+                  <td className="mono">{row.name}</td>
                   <td>{row.events}</td>
                   <td>{row.sessions}</td>
                 </tr>

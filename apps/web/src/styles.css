@@ -564,3 +564,9 @@ a:hover {
     font-size: 21px;
   }
 }
+
+.step__helper {
+  margin: 0;
+  font-size: 14px;
+  color: var(--muted);
+}

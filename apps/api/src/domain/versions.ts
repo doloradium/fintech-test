@@ -14,7 +14,8 @@ import { checksum } from './hash.js';
 type VersionRow = {
   version: number;
   funnel_id: string;
-  name: string;
+  title: string;
+  schema_version: string;
   config_json: string;
   checksum: string;
   source: string | null;
@@ -100,12 +101,13 @@ export const publishConfig = (
     const now = new Date().toISOString();
 
     db.prepare(
-      `INSERT INTO funnel_versions (version, funnel_id, name, config_json, checksum, source, notes, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO funnel_versions (version, funnel_id, title, schema_version, config_json, checksum, source, notes, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       version,
       config.funnelId,
-      config.name,
+      config.title,
+      config.schemaVersion,
       JSON.stringify(config),
       checksum(config),
       options.source ?? null,
@@ -163,17 +165,20 @@ export const listVersions = (db: Database): VersionSummary[] => {
     return {
       version: row.version,
       funnel_id: row.funnel_id,
-      name: row.name,
+      title: row.title,
+      schema_version: row.schema_version,
       checksum: row.checksum,
       notes: row.notes,
       created_at: row.created_at,
       is_active: row.version === active,
-      steps: config.steps.length,
+      steps: Object.keys(config.steps).length,
       sessions: sessionCounts.get(row.version) ?? 0,
-      variants: config.variants.map((variant) => ({
-        key: variant.key,
-        label: variant.label,
-        steps: variant.stepOrder.length,
+      results: Object.keys(config.results).length,
+      events: config.events.allowed.map((event) => event.name),
+      variants: Object.entries(config.experiment.variants).map(([key, variant]) => ({
+        key,
+        steps: variant.stepSequence.length,
+        weight: variant.weight,
       })),
     };
   });
@@ -181,7 +186,7 @@ export const listVersions = (db: Database): VersionSummary[] => {
 
 export type BundledConfig = {
   file: string;
-  name: string;
+  title: string;
   funnel_id: string;
   steps: number;
 };
@@ -199,9 +204,9 @@ export const listBundledConfigs = (configDir: string): BundledConfig[] => {
       return [
         {
           file,
-          name: parsed.data.name,
+          title: parsed.data.title,
           funnel_id: parsed.data.funnelId,
-          steps: parsed.data.steps.length,
+          steps: Object.keys(parsed.data.steps).length,
         },
       ];
     });

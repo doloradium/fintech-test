@@ -1,155 +1,221 @@
 import {
-  RESULT_STEP_ID,
+  contentSchema,
+  resultSchema,
   stepSchema,
-  resultScreenSchema,
+  type EventDefinition,
   type FunnelConfig,
-  type ResultScreen,
+  type FunnelResult,
+  type ResultRule,
   type Step,
-  type Transition,
+  type StepType,
   type VariantKey,
 } from './funnel-config.js';
-import { evaluateCondition, isAnswered, type Answers, type AnswerValue } from './conditions.js';
+import { evaluateCondition, isAnswered, type AnswerValue, type Answers } from './conditions.js';
 
 export type ResolvedFunnel = {
   funnelId: string;
-  name: string;
+  title: string;
+  description: string;
+  locale: string;
+  experimentId: string;
   variant: VariantKey;
-  variantLabel: string;
-  experiment: FunnelConfig['experiment'];
+  overrideQueryParam: string;
   steps: Step[];
-  result: ResultScreen;
-  extraEvents: string[];
+  results: Record<string, FunnelResult>;
+  resultRules: ResultRule[];
+  defaultResultId: string;
+  progress: { countVisibleOnly: boolean; excludeTypes: StepType[] };
+  session: { ttlHours: number; persistAnswers: boolean; pinVersion: boolean; pinExperimentVariant: boolean };
+  events: { baseProperties: string[]; allowed: EventDefinition[]; privacy: { storeRawAnswers: boolean; allowAnswerKinds: boolean } };
 };
 
-const mergeShallow = (base: Record<string, unknown>, patch: Record<string, unknown>): Record<string, unknown> => ({
-  ...base,
-  ...patch,
-});
+const asRecord = (value: unknown): Record<string, unknown> =>
+  value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+
+const mergeStep = (base: Step, override: Record<string, unknown>): Step => {
+  if (Object.keys(override).length === 0) return base;
+
+  const merged: Record<string, unknown> = { ...(base as unknown as Record<string, unknown>), ...override };
+
+  if (override.content) merged.content = contentSchema.parse({ ...base.content, ...asRecord(override.content) });
+  if (override.input) merged.input = { ...base.input, ...asRecord(override.input) };
+  if (override.validation) {
+    const validationOverride = asRecord(override.validation);
+    merged.validation = {
+      ...base.validation,
+      ...validationOverride,
+      messages: { ...(base.validation?.messages ?? {}), ...asRecord(validationOverride.messages) },
+    };
+  }
+
+  return stepSchema.parse(merged);
+};
+
+const mergeResult = (base: FunnelResult, override: Record<string, unknown>): FunnelResult => {
+  if (Object.keys(override).length === 0) return base;
+
+  const merged: Record<string, unknown> = { ...(base as unknown as Record<string, unknown>), ...override };
+  if (override.cta) merged.cta = { ...base.cta, ...asRecord(override.cta) };
+
+  return resultSchema.parse(merged);
+};
 
 export const resolveVariant = (config: FunnelConfig, variantKey: VariantKey): ResolvedFunnel => {
-  const variant = config.variants.find((candidate) => candidate.key === variantKey);
+  const variant = config.experiment.variants[variantKey];
   if (!variant) throw new Error(`variant "${variantKey}" is not defined in this funnel version`);
 
-  const byId = new Map(config.steps.map((step) => [step.id, step]));
-  const available = new Set(variant.stepOrder);
-
-  const steps = variant.stepOrder.map((stepId) => {
-    const base = byId.get(stepId);
+  const steps = variant.stepSequence.map((stepId) => {
+    const base = config.steps[stepId];
     if (!base) throw new Error(`variant "${variantKey}" references unknown step "${stepId}"`);
-    const patch = variant.overrides[stepId] ?? {};
-    const merged = stepSchema.parse(mergeShallow(base as unknown as Record<string, unknown>, patch));
-    const next = merged.next?.filter(
-      (transition: Transition) => transition.goto === RESULT_STEP_ID || available.has(transition.goto),
-    );
-    return (next && next.length > 0 ? { ...merged, next } : { ...merged, next: undefined }) as Step;
+    return mergeStep(base, variant.stepOverrides[stepId] ?? {});
   });
 
-  const result = resultScreenSchema.parse(
-    mergeShallow(config.result as unknown as Record<string, unknown>, variant.result),
-  );
+  const results: Record<string, FunnelResult> = {};
+  for (const [id, base] of Object.entries(config.results)) {
+    results[id] = mergeResult(base, variant.resultOverrides[id] ?? {});
+  }
 
   return {
     funnelId: config.funnelId,
-    name: config.name,
+    title: config.title,
+    description: config.description,
+    locale: config.locale,
+    experimentId: config.experiment.id,
     variant: variantKey,
-    variantLabel: variant.label,
-    experiment: config.experiment,
+    overrideQueryParam: config.experiment.overrideQueryParam,
     steps,
-    result,
-    extraEvents: config.extraEvents,
+    results,
+    resultRules: config.resultRules,
+    defaultResultId: config.defaultResultId,
+    progress: config.progress,
+    session: config.session,
+    events: config.events,
   };
 };
 
-export const getNextStepId = (steps: Step[], currentStepId: string, answers: Answers): string => {
-  const index = steps.findIndex((step) => step.id === currentStepId);
-  if (index === -1) return RESULT_STEP_ID;
-  const step = steps[index];
-  if (!step) return RESULT_STEP_ID;
+export const visibleSteps = (funnel: ResolvedFunnel, answers: Answers): Step[] =>
+  funnel.steps.filter((step) => !step.visibleWhen || evaluateCondition(step.visibleWhen, answers));
 
-  for (const transition of step.next ?? []) {
-    if (!transition.when || evaluateCondition(transition.when, answers)) return transition.goto;
-  }
+export const visibleStepIds = (funnel: ResolvedFunnel, answers: Answers): string[] =>
+  visibleSteps(funnel, answers).map((step) => step.id);
 
-  return steps[index + 1]?.id ?? RESULT_STEP_ID;
+export const firstStepId = (funnel: ResolvedFunnel, answers: Answers = {}): string => {
+  const first = visibleSteps(funnel, answers)[0] ?? funnel.steps[0];
+  if (!first) throw new Error('the resolved funnel has no steps');
+  return first.id;
 };
 
-export const computePath = (steps: Step[], answers: Answers): string[] => {
-  const first = steps[0];
-  if (!first) return [];
+export const resultStepId = (funnel: ResolvedFunnel): string | null =>
+  funnel.steps.find((step) => step.type === 'result')?.id ?? null;
 
-  const path: string[] = [];
-  const visited = new Set<string>();
-  let currentId: string = first.id;
+export const getNextStepId = (funnel: ResolvedFunnel, currentStepId: string, answers: Answers): string => {
+  const visible = visibleSteps(funnel, answers);
+  const index = visible.findIndex((step) => step.id === currentStepId);
+  if (index === -1) return visible[0]?.id ?? currentStepId;
+  return visible[index + 1]?.id ?? currentStepId;
+};
 
-  while (currentId !== RESULT_STEP_ID) {
-    if (visited.has(currentId)) break;
-    visited.add(currentId);
-    path.push(currentId);
-    currentId = getNextStepId(steps, currentId, answers);
-  }
+export const getPreviousStepId = (funnel: ResolvedFunnel, currentStepId: string, answers: Answers): string | null => {
+  const visible = visibleSteps(funnel, answers);
+  const index = visible.findIndex((step) => step.id === currentStepId);
+  if (index <= 0) return null;
+  return visible[index - 1]?.id ?? null;
+};
 
-  return path;
+export const countedSteps = (funnel: ResolvedFunnel, answers: Answers): Step[] => {
+  const pool = funnel.progress.countVisibleOnly ? visibleSteps(funnel, answers) : funnel.steps;
+  return pool.filter((step) => !funnel.progress.excludeTypes.includes(step.type));
 };
 
 export const computeProgress = (
-  steps: Step[],
+  funnel: ResolvedFunnel,
   answers: Answers,
   currentStepId: string,
 ): { index: number; total: number; ratio: number; path: string[] } => {
-  const path = computePath(steps, answers);
-  const total = path.length;
+  const visible = visibleSteps(funnel, answers);
+  const path = visible.map((step) => step.id);
+  const counted = countedSteps(funnel, answers);
+  const total = counted.length;
+  const position = path.indexOf(currentStepId);
 
-  if (currentStepId === RESULT_STEP_ID) return { index: total, total, ratio: 1, path };
+  if (position === -1) return { index: 0, total, ratio: 0, path };
 
-  const index = path.indexOf(currentStepId);
-  if (index === -1) return { index: 0, total, ratio: total === 0 ? 1 : 0, path };
+  const index = counted.filter((step) => path.indexOf(step.id) < position).length;
+  const ratio = total === 0 ? 1 : Math.min(index / total, 1);
 
-  return { index, total, ratio: total === 0 ? 1 : index / total, path };
+  return { index, total, ratio, path };
 };
 
-export const isStepReachable = (steps: Step[], answers: Answers, stepId: string): boolean =>
-  stepId === RESULT_STEP_ID || computePath(steps, answers).includes(stepId);
+export const resolveResultId = (funnel: ResolvedFunnel, answers: Answers): string => {
+  for (const rule of funnel.resultRules) {
+    if (evaluateCondition(rule.when, answers) && funnel.results[rule.resultId]) return rule.resultId;
+  }
+  return funnel.defaultResultId;
+};
+
+export const resolveResult = (funnel: ResolvedFunnel, answers: Answers): FunnelResult => {
+  const id = resolveResultId(funnel, answers);
+  const result = funnel.results[id] ?? funnel.results[funnel.defaultResultId];
+  if (!result) throw new Error('the funnel version has no usable result screen');
+  return result;
+};
+
+export const answerKind = (step: Step): string => step.type;
+
+const message = (step: Step, key: string, fallback: string): string =>
+  step.validation?.messages?.[key] ?? fallback;
 
 export const validateAnswer = (step: Step, value: AnswerValue | undefined): string | null => {
-  switch (step.type) {
-    case 'info':
-      return null;
-    case 'single_select': {
-      if (!isAnswered(value)) return step.required ? 'Выберите один из вариантов' : null;
-      if (typeof value !== 'string') return 'Некорректный формат ответа';
-      return step.options.some((option) => option.value === value) ? null : 'Такого варианта нет в этом шаге';
+  if (step.type === 'info' || step.type === 'result') return null;
+
+  const required = step.validation?.required ?? false;
+
+  if (step.type === 'multi-select') {
+    const selected = Array.isArray(value) ? value : [];
+    const min = step.validation?.minSelections ?? (required ? 1 : undefined);
+    const max = step.validation?.maxSelections;
+    const allowed = new Set((step.input?.options ?? []).map((option) => option.value));
+
+    if (min !== undefined && selected.length < min) {
+      return message(step, 'minSelections', message(step, 'required', `Choose at least ${min}.`));
     }
-    case 'multi_select': {
-      const selected = Array.isArray(value) ? value : [];
-      if (selected.length < step.minSelected) {
-        return step.minSelected === 1
-          ? 'Выберите хотя бы один вариант'
-          : `Выберите минимум ${step.minSelected} варианта`;
-      }
-      if (step.maxSelected !== undefined && selected.length > step.maxSelected) {
-        return `Можно выбрать не больше ${step.maxSelected} вариантов`;
-      }
-      const allowed = new Set(step.options.map((option) => option.value));
-      return selected.every((item) => allowed.has(item)) ? null : 'В ответе есть неизвестный вариант';
+    if (max !== undefined && selected.length > max) {
+      return message(step, 'maxSelections', `Choose no more than ${max}.`);
     }
-    case 'number': {
-      if (!isAnswered(value)) return step.required ? 'Введите значение' : null;
-      const parsed = typeof value === 'number' ? value : Number(value);
-      if (!Number.isFinite(parsed)) return 'Введите число';
-      if (step.integer && !Number.isInteger(parsed)) return 'Введите целое число';
-      if (step.min !== undefined && parsed < step.min) return `Минимум — ${step.min}`;
-      if (step.max !== undefined && parsed > step.max) return `Максимум — ${step.max}`;
-      return null;
+    if (!selected.every((item) => allowed.has(item))) {
+      return message(step, 'invalid', 'One of the selected options is unknown.');
     }
+    return null;
   }
+
+  if (!isAnswered(value)) {
+    return required ? message(step, 'required', 'This answer is required.') : null;
+  }
+
+  if (step.type === 'number') {
+    const parsed = typeof value === 'number' ? value : Number(value);
+    if (!Number.isFinite(parsed)) return message(step, 'invalid', 'Enter a number.');
+    const { min, max, step: increment } = step.input ?? {};
+    if (min !== undefined && parsed < min) return message(step, 'min', `Enter a value of at least ${min}.`);
+    if (max !== undefined && parsed > max) return message(step, 'max', `Enter a value up to ${max}.`);
+    if (increment !== undefined && increment === 1 && !Number.isInteger(parsed)) {
+      return message(step, 'step', 'Enter a whole number.');
+    }
+    return null;
+  }
+
+  const allowed = new Set((step.input?.options ?? []).map((option) => option.value));
+
+  if (typeof value !== 'string') return message(step, 'invalid', 'Select one of the options.');
+  return allowed.has(value) ? null : message(step, 'invalid', 'Select one of the options.');
 };
 
 export const normalizeAnswer = (step: Step, value: AnswerValue | undefined): AnswerValue => {
+  if (step.type === 'info' || step.type === 'result') return true;
   if (step.type === 'number') {
     if (!isAnswered(value)) return null;
     return typeof value === 'number' ? value : Number(value);
   }
-  if (step.type === 'multi_select') return Array.isArray(value) ? [...value] : [];
-  if (step.type === 'info') return true;
+  if (step.type === 'multi-select') return Array.isArray(value) ? [...value] : [];
   return value ?? null;
 };

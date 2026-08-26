@@ -87,7 +87,7 @@ export const VersionsPage = () => {
             <select className="input" value={file} onChange={(event) => setFile(event.target.value)}>
               {data.bundled_configs.map((config, index) => (
                 <option key={index} value={config.file}>
-                  {config.file} — {config.name} ({config.steps} экранов)
+                  {config.file} — {config.title} ({config.steps} экранов)
                 </option>
               ))}
             </select>
@@ -137,6 +137,7 @@ export const VersionsPage = () => {
                 <th>Версия</th>
                 <th>Название</th>
                 <th>Экранов</th>
+                <th>Результатов</th>
                 <th>Варианты</th>
                 <th>Сессий</th>
                 <th>Checksum</th>
@@ -151,17 +152,21 @@ export const VersionsPage = () => {
                     {version.version}
                     {version.is_active ? <span className="badge badge--success">активна</span> : null}
                   </td>
-                  <td>{version.name}</td>
+                  <td>{version.title}</td>
                   <td>{version.steps}</td>
+                  <td>{version.results}</td>
                   <td>
                     {version.variants.map((variant, variantIndex) => (
                       <div key={variantIndex} className="muted">
-                        {variant.key}: {variant.steps} экранов
+                        {variant.key}: {variant.steps} экранов, вес {variant.weight}
                       </div>
                     ))}
                   </td>
                   <td>{version.sessions}</td>
-                  <td className="mono">{version.checksum}</td>
+                  <td className="mono">
+                    {version.checksum}
+                    <div className="muted">schema {version.schema_version}</div>
+                  </td>
                   <td className="muted">{new Date(version.created_at).toLocaleString('ru-RU')}</td>
                   <td>
                     {version.is_active ? null : (

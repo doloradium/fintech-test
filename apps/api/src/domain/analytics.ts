@@ -22,13 +22,14 @@ type SessionMeta = {
   version: number;
   variant: VariantKey;
   campaign: string | null;
+  resultId: string | null;
 };
 
 type SessionFacts = {
   viewedSteps: Set<string>;
   completedSteps: Set<string>;
   backSteps: Set<string>;
-  types: Set<string>;
+  names: Set<string>;
 };
 
 const ratio = (numerator: number, denominator: number): number =>
@@ -47,7 +48,7 @@ const buildFilter = (query: AnalyticsQuery): { sql: string; params: Array<string
     params.push(query.variant);
   }
   if (query.utm_campaign != null) {
-    clauses.push('COALESCE(s.utm_campaign, \'\') = ?');
+    clauses.push("COALESCE(s.utm_campaign, '') = ?");
     params.push(query.utm_campaign);
   }
   if (query.from != null) {
@@ -66,7 +67,7 @@ const emptyFacts = (): SessionFacts => ({
   viewedSteps: new Set(),
   completedSteps: new Set(),
   backSteps: new Set(),
-  types: new Set(),
+  names: new Set(),
 });
 
 const overviewOf = (sessionIds: string[], facts: Map<string, SessionFacts>): FunnelOverview => {
@@ -76,8 +77,8 @@ const overviewOf = (sessionIds: string[], facts: Map<string, SessionFacts>): Fun
   for (const sessionId of sessionIds) {
     const fact = facts.get(sessionId);
     if (!fact) continue;
-    if (fact.types.has('result_viewed')) reachedResult += 1;
-    if (fact.types.has('cta_clicked')) ctaClicks += 1;
+    if (fact.names.has('result_viewed')) reachedResult += 1;
+    if (fact.names.has('cta_clicked')) ctaClicks += 1;
   }
 
   return {
@@ -89,21 +90,23 @@ const overviewOf = (sessionIds: string[], facts: Map<string, SessionFacts>): Fun
   };
 };
 
-const canonicalOrder = (db: Database, query: AnalyticsQuery, seenSteps: Set<string>): Array<{ id: string; title: string | null }> => {
+type StepInfo = { id: string; title: string | null; type: string | null };
+
+const canonicalOrder = (db: Database, query: AnalyticsQuery, seenSteps: Set<string>): StepInfo[] => {
   const version = query.version ?? getActiveVersion(db);
-  const order: Array<{ id: string; title: string | null }> = [];
+  const order: StepInfo[] = [];
   const used = new Set<string>();
 
   if (version !== null) {
     try {
       const config = getConfig(db, version);
-      const variantKeys: VariantKey[] = query.variant ? [query.variant] : ['A', 'B'];
-      for (const key of variantKeys) {
-        if (!config.variants.some((variant) => variant.key === key)) continue;
+      const keys = query.variant ? [query.variant] : Object.keys(config.experiment.variants);
+      for (const key of keys) {
+        if (!config.experiment.variants[key]) continue;
         for (const step of resolveVariant(config, key).steps) {
           if (used.has(step.id)) continue;
           used.add(step.id);
-          order.push({ id: step.id, title: step.title });
+          order.push({ id: step.id, title: step.content.title ?? null, type: step.type });
         }
       }
     } catch {}
@@ -112,7 +115,7 @@ const canonicalOrder = (db: Database, query: AnalyticsQuery, seenSteps: Set<stri
   for (const stepId of [...seenSteps].sort()) {
     if (used.has(stepId)) continue;
     used.add(stepId);
-    order.push({ id: stepId, title: null });
+    order.push({ id: stepId, title: null, type: null });
   }
 
   return order;
@@ -122,17 +125,25 @@ export const computeAnalytics = (db: Database, query: AnalyticsQuery = {}): Anal
   const filter = buildFilter(query);
 
   const sessionRows = db
-    .prepare(`SELECT s.id, s.funnel_version, s.variant, s.utm_campaign FROM sessions s ${filter.sql}`)
+    .prepare(
+      `SELECT s.id, s.funnel_version, s.variant, s.utm_campaign, s.result_id FROM sessions s ${filter.sql}`,
+    )
     .all(...filter.params) as unknown as Array<{
     id: string;
     funnel_version: number;
     variant: VariantKey;
     utm_campaign: string | null;
+    result_id: string | null;
   }>;
 
   const meta = new Map<string, SessionMeta>();
   for (const row of sessionRows) {
-    meta.set(row.id, { version: row.funnel_version, variant: row.variant, campaign: row.utm_campaign });
+    meta.set(row.id, {
+      version: row.funnel_version,
+      variant: row.variant,
+      campaign: row.utm_campaign,
+      resultId: row.result_id,
+    });
   }
 
   const facts = new Map<string, SessionFacts>();
@@ -140,11 +151,11 @@ export const computeAnalytics = (db: Database, query: AnalyticsQuery = {}): Anal
 
   const distinctRows = db
     .prepare(
-      `SELECT DISTINCT e.session_id, e.type, e.step_id
+      `SELECT DISTINCT e.session_id, e.name, e.step_id
        FROM events e JOIN sessions s ON s.id = e.session_id
        ${filter.sql}`,
     )
-    .all(...filter.params) as unknown as Array<{ session_id: string; type: string; step_id: string | null }>;
+    .all(...filter.params) as unknown as Array<{ session_id: string; name: string; step_id: string | null }>;
 
   for (const row of distinctRows) {
     let fact = facts.get(row.session_id);
@@ -152,12 +163,12 @@ export const computeAnalytics = (db: Database, query: AnalyticsQuery = {}): Anal
       fact = emptyFacts();
       facts.set(row.session_id, fact);
     }
-    fact.types.add(row.type);
+    fact.names.add(row.name);
     if (row.step_id) {
-      if (row.type === 'step_viewed') fact.viewedSteps.add(row.step_id);
-      if (row.type === 'step_completed') fact.completedSteps.add(row.step_id);
-      if (row.type === 'back_clicked') fact.backSteps.add(row.step_id);
-      if (row.type === 'step_viewed' || row.type === 'step_completed') seenSteps.add(row.step_id);
+      if (row.name === 'step_viewed' || row.name === 'result_viewed') fact.viewedSteps.add(row.step_id);
+      if (row.name === 'step_completed' || row.name === 'cta_clicked') fact.completedSteps.add(row.step_id);
+      if (row.name === 'back_clicked') fact.backSteps.add(row.step_id);
+      if (row.name !== 'back_clicked') seenSteps.add(row.step_id);
     }
   }
 
@@ -208,15 +219,23 @@ export const computeAnalytics = (db: Database, query: AnalyticsQuery = {}): Anal
       if (fact.backSteps.has(step.id)) backClicks += 1;
       if (!fact.viewedSteps.has(step.id)) continue;
       entered += 1;
-      if (fact.completedSteps.has(step.id)) completed += 1;
+      const isCompleted = fact.completedSteps.has(step.id);
+      if (isCompleted) completed += 1;
+
+      if (step.type === 'result') {
+        if (isCompleted) continued += 1;
+        continue;
+      }
+
       const ownIndex = variantOrder(info.version, info.variant).get(step.id);
       const reachedLater = ownIndex !== undefined && (maxViewedIndex.get(sessionId) ?? -1) > ownIndex;
-      if (reachedLater || fact.types.has('result_viewed')) continued += 1;
+      if (reachedLater || fact.names.has('result_viewed')) continued += 1;
     }
 
     return {
       stepId: step.id,
       title: step.title,
+      type: step.type,
       entered,
       completed,
       continued,
@@ -228,7 +247,7 @@ export const computeAnalytics = (db: Database, query: AnalyticsQuery = {}): Anal
     };
   });
 
-  const groupBy = (pick: (meta: SessionMeta) => string | null, label: (key: string) => string): SegmentMetrics[] => {
+  const groupBy = (pick: (info: SessionMeta) => string | null, label: (key: string) => string): SegmentMetrics[] => {
     const groups = new Map<string, string[]>();
     for (const sessionId of sessionIds) {
       const info = meta.get(sessionId);
@@ -244,14 +263,34 @@ export const computeAnalytics = (db: Database, query: AnalyticsQuery = {}): Anal
       .map(([key, ids]) => ({ key, label: label(key), ...overviewOf(ids, facts) }));
   };
 
+  const resultTitles = new Map<string, string>();
+  const activeVersion = query.version ?? getActiveVersion(db);
+  if (activeVersion !== null) {
+    try {
+      for (const [id, result] of Object.entries(getConfig(db, activeVersion).results)) {
+        resultTitles.set(id, result.title);
+      }
+    } catch {}
+  }
+
+  const resultGroups = new Map<string, { sessions: number; ctaClicks: number }>();
+  for (const sessionId of sessionIds) {
+    const info = meta.get(sessionId);
+    if (!info?.resultId) continue;
+    const bucket = resultGroups.get(info.resultId) ?? { sessions: 0, ctaClicks: 0 };
+    bucket.sessions += 1;
+    if (facts.get(sessionId)?.names.has('cta_clicked')) bucket.ctaClicks += 1;
+    resultGroups.set(info.resultId, bucket);
+  }
+
   const eventCounts = db
     .prepare(
-      `SELECT e.type AS type, COUNT(*) AS events, COUNT(DISTINCT e.session_id) AS sessions
+      `SELECT e.name AS name, COUNT(*) AS events, COUNT(DISTINCT e.session_id) AS sessions
        FROM events e JOIN sessions s ON s.id = e.session_id
        ${filter.sql}
-       GROUP BY e.type ORDER BY events DESC`,
+       GROUP BY e.name ORDER BY events DESC`,
     )
-    .all(...filter.params) as unknown as Array<{ type: string; events: number; sessions: number }>;
+    .all(...filter.params) as unknown as Array<{ name: string; events: number; sessions: number }>;
 
   const orderedArrivals = db
     .prepare(
@@ -275,20 +314,6 @@ export const computeAnalytics = (db: Database, query: AnalyticsQuery = {}): Anal
     | { accepted: number; duplicates: number; rejected: number }
     | undefined;
 
-  const available = {
-    versions: (
-      db.prepare('SELECT DISTINCT funnel_version AS v FROM sessions ORDER BY v').all() as unknown as Array<{ v: number }>
-    ).map((row) => Number(row.v)),
-    variants: (
-      db.prepare('SELECT DISTINCT variant AS v FROM sessions ORDER BY v').all() as unknown as Array<{ v: VariantKey }>
-    ).map((row) => row.v),
-    campaigns: (
-      db
-        .prepare("SELECT DISTINCT COALESCE(utm_campaign, '') AS v FROM sessions ORDER BY v")
-        .all() as unknown as Array<{ v: string }>
-    ).map((row) => row.v),
-  };
-
   const filters: AnalyticsFilters = {
     version: query.version ?? null,
     variant: query.variant ?? null,
@@ -305,8 +330,17 @@ export const computeAnalytics = (db: Database, query: AnalyticsQuery = {}): Anal
     byVariant: groupBy((info) => info.variant, (key) => `Вариант ${key}`),
     byVersion: groupBy((info) => String(info.version), (key) => `Версия ${key}`),
     byCampaign: groupBy((info) => info.campaign, (key) => (key === '(none)' ? 'Без кампании' : key)),
+    byResult: [...resultGroups.entries()]
+      .sort((a, b) => b[1].sessions - a[1].sessions)
+      .map(([resultId, bucket]) => ({
+        resultId,
+        title: resultTitles.get(resultId) ?? null,
+        sessions: bucket.sessions,
+        ctaClicks: bucket.ctaClicks,
+        ctaCtr: ratio(bucket.ctaClicks, bucket.sessions),
+      })),
     eventCounts: eventCounts.map((row) => ({
-      type: row.type,
+      name: row.name,
       events: Number(row.events),
       sessions: Number(row.sessions),
     })),
@@ -315,8 +349,20 @@ export const computeAnalytics = (db: Database, query: AnalyticsQuery = {}): Anal
       duplicateAttempts: Number(stats?.duplicates ?? 0),
       rejectedEvents: Number(stats?.rejected ?? 0),
       outOfOrderEvents,
-      sessionsWithBack: sessionIds.filter((id) => facts.get(id)?.types.has('back_clicked')).length,
+      sessionsWithBack: sessionIds.filter((id) => facts.get(id)?.names.has('back_clicked')).length,
     },
-    available,
+    available: {
+      versions: (
+        db.prepare('SELECT DISTINCT funnel_version AS v FROM sessions ORDER BY v').all() as unknown as Array<{ v: number }>
+      ).map((row) => Number(row.v)),
+      variants: (
+        db.prepare('SELECT DISTINCT variant AS v FROM sessions ORDER BY v').all() as unknown as Array<{ v: VariantKey }>
+      ).map((row) => row.v),
+      campaigns: (
+        db
+          .prepare("SELECT DISTINCT COALESCE(utm_campaign, '') AS v FROM sessions ORDER BY v")
+          .all() as unknown as Array<{ v: string }>
+      ).map((row) => row.v),
+    },
   };
 };

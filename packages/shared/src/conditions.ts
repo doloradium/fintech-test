@@ -1,103 +1,131 @@
 import { z } from 'zod';
 
 export type AnswerValue = string | number | boolean | string[] | null;
-
-export type Condition =
-  | { op: 'always' }
-  | { op: 'eq'; step: string; value: string | number | boolean }
-  | { op: 'neq'; step: string; value: string | number | boolean }
-  | { op: 'in'; step: string; values: Array<string | number | boolean> }
-  | { op: 'includes'; step: string; value: string }
-  | { op: 'includesAny'; step: string; values: string[] }
-  | { op: 'countGte'; step: string; value: number }
-  | { op: 'gt'; step: string; value: number }
-  | { op: 'gte'; step: string; value: number }
-  | { op: 'lt'; step: string; value: number }
-  | { op: 'lte'; step: string; value: number }
-  | { op: 'answered'; step: string }
-  | { op: 'and'; conditions: Condition[] }
-  | { op: 'or'; conditions: Condition[] }
-  | { op: 'not'; condition: Condition };
-
-const primitive = z.union([z.string(), z.number(), z.boolean()]);
-
-export const conditionSchema: z.ZodType<Condition> = z.lazy(() =>
-  z.discriminatedUnion('op', [
-    z.object({ op: z.literal('always') }),
-    z.object({ op: z.literal('eq'), step: z.string(), value: primitive }),
-    z.object({ op: z.literal('neq'), step: z.string(), value: primitive }),
-    z.object({ op: z.literal('in'), step: z.string(), values: z.array(primitive).min(1) }),
-    z.object({ op: z.literal('includes'), step: z.string(), value: z.string() }),
-    z.object({ op: z.literal('includesAny'), step: z.string(), values: z.array(z.string()).min(1) }),
-    z.object({ op: z.literal('countGte'), step: z.string(), value: z.number() }),
-    z.object({ op: z.literal('gt'), step: z.string(), value: z.number() }),
-    z.object({ op: z.literal('gte'), step: z.string(), value: z.number() }),
-    z.object({ op: z.literal('lt'), step: z.string(), value: z.number() }),
-    z.object({ op: z.literal('lte'), step: z.string(), value: z.number() }),
-    z.object({ op: z.literal('answered'), step: z.string() }),
-    z.object({ op: z.literal('and'), conditions: z.array(conditionSchema).min(1) }),
-    z.object({ op: z.literal('or'), conditions: z.array(conditionSchema).min(1) }),
-    z.object({ op: z.literal('not'), condition: conditionSchema }),
-  ]),
-);
-
 export type Answers = Record<string, AnswerValue | undefined>;
 
-const asNumber = (value: AnswerValue | undefined): number | null => {
-  if (typeof value === 'number' && Number.isFinite(value)) return value;
-  if (typeof value === 'string' && value.trim() !== '' && Number.isFinite(Number(value))) return Number(value);
-  return null;
+export const OPERATORS = [
+  'eq',
+  'neq',
+  'in',
+  'notIn',
+  'contains',
+  'containsAny',
+  'containsAll',
+  'gt',
+  'gte',
+  'lt',
+  'lte',
+  'between',
+  'isAnswered',
+  'isEmpty',
+] as const;
+
+export type Operator = (typeof OPERATORS)[number];
+
+export type LeafCondition = {
+  answer: string;
+  operator: Operator;
+  value?: unknown;
 };
 
-const asArray = (value: AnswerValue | undefined): string[] => {
-  if (Array.isArray(value)) return value;
-  if (typeof value === 'string') return [value];
-  return [];
-};
+export type Condition =
+  | LeafCondition
+  | { all: Condition[] }
+  | { any: Condition[] }
+  | { none: Condition[] }
+  | { not: Condition };
 
-const isAnswered = (value: AnswerValue | undefined): boolean => {
+const leafSchema = z.object({
+  answer: z.string().min(1),
+  operator: z.enum(OPERATORS),
+  value: z.unknown().optional(),
+});
+
+export const conditionSchema: z.ZodType<Condition> = z.lazy(() =>
+  z.union([
+    leafSchema,
+    z.object({ all: z.array(conditionSchema).min(1) }),
+    z.object({ any: z.array(conditionSchema).min(1) }),
+    z.object({ none: z.array(conditionSchema).min(1) }),
+    z.object({ not: conditionSchema }),
+  ]),
+) as z.ZodType<Condition>;
+
+export const isAnswered = (value: AnswerValue | undefined): boolean => {
   if (value === undefined || value === null) return false;
   if (Array.isArray(value)) return value.length > 0;
   if (typeof value === 'string') return value.trim() !== '';
   return true;
 };
 
-export const evaluateCondition = (condition: Condition, answers: Answers): boolean => {
-  switch (condition.op) {
-    case 'always':
-      return true;
+const toNumber = (value: unknown): number | null => {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim() !== '' && Number.isFinite(Number(value))) return Number(value);
+  return null;
+};
+
+const toList = (value: unknown): unknown[] => {
+  if (Array.isArray(value)) return value;
+  if (value === undefined || value === null) return [];
+  return [value];
+};
+
+const sameScalar = (left: AnswerValue | undefined, right: unknown): boolean => {
+  if (left === right) return true;
+  const leftNumber = toNumber(left);
+  const rightNumber = toNumber(right);
+  return leftNumber !== null && rightNumber !== null && leftNumber === rightNumber;
+};
+
+const evaluateLeaf = (condition: LeafCondition, answers: Answers): boolean => {
+  const left = answers[condition.answer];
+  const right = condition.value;
+
+  switch (condition.operator) {
+    case 'isAnswered':
+      return isAnswered(left);
+    case 'isEmpty':
+      return !isAnswered(left);
     case 'eq':
-      return answers[condition.step] === condition.value;
+      return sameScalar(left, right);
     case 'neq':
-      return isAnswered(answers[condition.step]) && answers[condition.step] !== condition.value;
+      return isAnswered(left) && !sameScalar(left, right);
     case 'in':
-      return condition.values.some((candidate) => candidate === answers[condition.step]);
-    case 'includes':
-      return asArray(answers[condition.step]).includes(condition.value);
-    case 'includesAny':
-      return condition.values.some((candidate) => asArray(answers[condition.step]).includes(candidate));
-    case 'countGte':
-      return asArray(answers[condition.step]).length >= condition.value;
+      return toList(right).some((candidate) => sameScalar(left, candidate));
+    case 'notIn':
+      return isAnswered(left) && !toList(right).some((candidate) => sameScalar(left, candidate));
+    case 'contains':
+      return toList(left).some((item) => item === right);
+    case 'containsAny':
+      return toList(right).some((candidate) => toList(left).includes(candidate));
+    case 'containsAll':
+      return toList(right).every((candidate) => toList(left).includes(candidate));
+    case 'between': {
+      const bounds = toList(right);
+      const value = toNumber(left);
+      const min = toNumber(bounds[0]);
+      const max = toNumber(bounds[1]);
+      return value !== null && min !== null && max !== null && value >= min && value <= max;
+    }
     case 'gt':
     case 'gte':
     case 'lt':
     case 'lte': {
-      const left = asNumber(answers[condition.step]);
-      if (left === null) return false;
-      if (condition.op === 'gt') return left > condition.value;
-      if (condition.op === 'gte') return left >= condition.value;
-      if (condition.op === 'lt') return left < condition.value;
-      return left <= condition.value;
+      const value = toNumber(left);
+      const bound = toNumber(right);
+      if (value === null || bound === null) return false;
+      if (condition.operator === 'gt') return value > bound;
+      if (condition.operator === 'gte') return value >= bound;
+      if (condition.operator === 'lt') return value < bound;
+      return value <= bound;
     }
-    case 'answered':
-      return isAnswered(answers[condition.step]);
-    case 'and':
-      return condition.conditions.every((child) => evaluateCondition(child, answers));
-    case 'or':
-      return condition.conditions.some((child) => evaluateCondition(child, answers));
-    case 'not':
-      return !evaluateCondition(condition.condition, answers);
   }
 };
 
-export { isAnswered };
+export const evaluateCondition = (condition: Condition, answers: Answers): boolean => {
+  if ('all' in condition) return condition.all.every((child) => evaluateCondition(child, answers));
+  if ('any' in condition) return condition.any.some((child) => evaluateCondition(child, answers));
+  if ('none' in condition) return !condition.none.some((child) => evaluateCondition(child, answers));
+  if ('not' in condition) return !evaluateCondition(condition.not, answers);
+  return evaluateLeaf(condition, answers);
+};

@@ -1,6 +1,15 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import type { SessionView, VersionsResponse } from '@funnel/shared';
-import { activate, createSession, createTestApp, json, publish, walkToResult, type TestApp } from './helpers.js';
+import type { VersionsResponse } from '@funnel/shared';
+import {
+  activate,
+  answer,
+  createSession,
+  createTestApp,
+  json,
+  publish,
+  walkToResult,
+  type TestApp,
+} from './helpers.js';
 
 describe('публикация и откат версии', () => {
   let ctx: TestApp;
@@ -19,7 +28,7 @@ describe('публикация и откат версии', () => {
   it('публикация новой версии не требует передеплоя и сразу меняет активную', async () => {
     expect((await versions()).active_version).toBe(1);
 
-    const published = await publish(ctx.app, 'funnel.v3.json');
+    const published = await publish(ctx.app, 'funnel-v2.json');
     expect(published.version).toBe(2);
 
     const state = await versions();
@@ -29,15 +38,15 @@ describe('публикация и откат версии', () => {
   });
 
   it('сессия, начатая до публикации, доживает до результата на старой версии', async () => {
-    const before = await createSession(ctx.app);
+    const before = await createSession(ctx.app, '?variant=A');
     expect(before.funnel_version).toBe(2);
 
-    await publish(ctx.app, 'funnel.v2.json');
+    await publish(ctx.app, 'funnel-v1.json');
 
     const finished = await walkToResult(ctx.app, before);
     expect(finished.funnel_version).toBe(2);
-    expect(finished.current_step_id).toBe('@result');
     expect(finished.completed_at).not.toBeNull();
+    expect(finished.result_id).toBeTruthy();
   });
 
   it('откат возвращает предыдущую версию и пишется в журнал как rollback', async () => {
@@ -48,13 +57,11 @@ describe('публикация и откат версии', () => {
     const state = await versions();
     expect(state.active_version).toBe(1);
     expect(state.activations[0]?.action).toBe('rollback');
-
-    const fresh = await createSession(ctx.app);
-    expect(fresh.funnel_version).toBe(1);
+    expect((await createSession(ctx.app)).funnel_version).toBe(1);
   });
 
-  it('аналитика по старым версиям переживает откат', async () => {
-    const analytics = json<{ byVersion: Array<{ key: string; sessions: number }> }>(
+  it('аналитика по прежним версиям переживает откат', async () => {
+    const analytics = json<{ byVersion: Array<{ key: string }> }>(
       (await ctx.app.inject({ method: 'GET', url: '/api/admin/analytics' })).body,
     );
 
@@ -64,66 +71,49 @@ describe('публикация и откат версии', () => {
   it('вторая итерация добавляет ветку и убирает экран у варианта B', async () => {
     await activate(ctx.app, 2);
 
-    const a = json<SessionView>(
-      (await ctx.app.inject({ method: 'POST', url: '/api/sessions?variant=A', payload: {} })).body,
-    );
-    const b = json<SessionView>(
-      (await ctx.app.inject({ method: 'POST', url: '/api/sessions?variant=B', payload: {} })).body,
-    );
+    const a = await createSession(ctx.app, '?variant=A');
+    const b = await createSession(ctx.app, '?variant=B');
 
-    expect(a.funnel.steps.some((step) => step.id === 'design_style')).toBe(true);
-    expect(b.funnel.steps.some((step) => step.id === 'design_style')).toBe(true);
-    expect(a.funnel.steps.some((step) => step.id === 'property_state')).toBe(true);
-    expect(b.funnel.steps.some((step) => step.id === 'property_state')).toBe(false);
-    expect(a.funnel.extraEvents).toContain('hint_opened');
+    expect(a.funnel.steps.some((step) => step.id === 'meeting_load')).toBe(true);
+    expect(b.funnel.steps.some((step) => step.id === 'meeting_load')).toBe(true);
+    expect(a.funnel.steps.some((step) => step.id === 'tool_count')).toBe(true);
+    expect(b.funnel.steps.some((step) => step.id === 'tool_count')).toBe(false);
+    expect(a.funnel.events.allowed.map((entry) => entry.name)).toContain('recommendation_expanded');
   });
 
-  it('новая ветка открывается только при подходящем ответе', async () => {
-    const view = json<SessionView>(
-      (await ctx.app.inject({ method: 'POST', url: '/api/sessions?variant=A', payload: {} })).body,
-    );
+  it('новая условная ветка открывается только при подходящем ответе', async () => {
+    let view = await createSession(ctx.app, '?variant=A');
+    view = await answer(ctx.app, view.session_id, 'intro', true);
+    view = await answer(ctx.app, view.session_id, 'team_size', 12);
+    view = await answer(ctx.app, view.session_id, 'work_mode', 'remote');
+    view = await answer(ctx.app, view.session_id, 'priorities', ['speed']);
+    view = await answer(ctx.app, view.session_id, 'timezone_span', 'same');
 
-    const withoutDesign = await ctx.app.inject({
-      method: 'POST',
-      url: `/api/sessions/${view.session_id}/answer`,
-      payload: { step_id: 'intro', value: true },
-    });
-    expect(withoutDesign.statusCode).toBe(200);
+    expect(view.path).not.toContain('office_days');
+    expect(view.current_step_id).toBe('async_maturity');
 
-    let current = json<SessionView>(withoutDesign.body);
-    current = json<SessionView>(
-      (
-        await ctx.app.inject({
-          method: 'POST',
-          url: `/api/sessions/${view.session_id}/answer`,
-          payload: { step_id: 'property_type', value: 'apartment' },
-        })
-      ).body,
-    );
-    current = json<SessionView>(
-      (
-        await ctx.app.inject({
-          method: 'POST',
-          url: `/api/sessions/${view.session_id}/answer`,
-          payload: { step_id: 'rooms', value: 2 },
-        })
-      ).body,
-    );
+    const withoutBranch = await answer(ctx.app, view.session_id, 'async_maturity', 'high');
+    expect(withoutBranch.path).not.toContain('meeting_load');
+    expect(withoutBranch.current_step_id).toBe('tool_count');
 
-    expect(current.current_step_id).toBe('works');
-    expect(current.path).not.toContain('design_style');
+    const withBranch = await answer(ctx.app, view.session_id, 'async_maturity', 'low');
+    expect(withBranch.path).toContain('meeting_load');
+    expect(withBranch.current_step_id).toBe('meeting_load');
+  });
 
-    const withDesign = json<SessionView>(
-      (
-        await ctx.app.inject({
-          method: 'POST',
-          url: `/api/sessions/${view.session_id}/answer`,
-          payload: { step_id: 'works', value: ['walls', 'design'] },
-        })
-      ).body,
-    );
+  it('видимость шага меняет знаменатель прогресса', async () => {
+    let view = await createSession(ctx.app, '?variant=A');
+    const initialTotal = view.progress.total;
 
-    expect(withDesign.current_step_id).toBe('design_style');
-    expect(withDesign.path).toContain('design_style');
+    view = await answer(ctx.app, view.session_id, 'intro', true);
+    view = await answer(ctx.app, view.session_id, 'team_size', 8);
+    const hybrid = await answer(ctx.app, view.session_id, 'work_mode', 'hybrid');
+
+    expect(hybrid.path).toContain('office_days');
+    expect(hybrid.progress.total).toBe(initialTotal + 1);
+
+    const remote = await answer(ctx.app, view.session_id, 'work_mode', 'remote');
+    expect(remote.path).not.toContain('office_days');
+    expect(remote.progress.total).toBe(initialTotal);
   });
 });

@@ -1,11 +1,15 @@
 import {
-  RESULT_STEP_ID,
   computeProgress,
+  firstStepId,
   getNextStepId,
+  getPreviousStepId,
   normalizeAnswer,
+  resolveResultId,
   resolveVariant,
-  validateAnswer,
+  resultStepId,
   UTM_KEYS,
+  validateAnswer,
+  visibleStepIds,
   type AnswerValue,
   type Answers,
   type ResolvedFunnel,
@@ -15,7 +19,7 @@ import {
 } from '@funnel/shared';
 import type { Database } from '../db/database.js';
 import { transaction } from '../db/database.js';
-import { badRequest, notFound } from '../errors.js';
+import { HttpError, badRequest, notFound } from '../errors.js';
 import { assignVariant, newId } from './hash.js';
 import { getActiveConfig, getConfig } from './versions.js';
 
@@ -23,9 +27,11 @@ export type SessionRow = {
   id: string;
   funnel_id: string;
   funnel_version: number;
+  experiment_id: string;
   variant: VariantKey;
   variant_source: 'assigned' | 'override';
   current_step_id: string;
+  result_id: string | null;
   utm_source: string | null;
   utm_medium: string | null;
   utm_campaign: string | null;
@@ -33,6 +39,7 @@ export type SessionRow = {
   utm_term: string | null;
   created_at: string;
   last_seen_at: string;
+  expires_at: string;
   completed_at: string | null;
 };
 
@@ -42,6 +49,9 @@ export const getSessionRow = (db: Database, sessionId: string): SessionRow | und
 export const requireSessionRow = (db: Database, sessionId: string): SessionRow => {
   const row = getSessionRow(db, sessionId);
   if (!row) throw notFound(`session "${sessionId}" not found`);
+  if (Date.parse(row.expires_at) <= Date.now()) {
+    throw new HttpError(410, `session "${sessionId}" has expired`, { expires_at: row.expires_at });
+  }
   return row;
 };
 
@@ -69,16 +79,21 @@ const utmOf = (row: SessionRow): Utm => ({
 export const buildSessionView = (db: Database, row: SessionRow): SessionView => {
   const funnel = getResolvedFunnel(db, row);
   const answers = getAnswers(db, row.id);
-  const progress = computeProgress(funnel.steps, answers, row.current_step_id);
+  const progress = computeProgress(funnel, answers, row.current_step_id);
+  const onResult = funnel.steps.find((step) => step.id === row.current_step_id)?.type === 'result';
 
   return {
     session_id: row.id,
+    funnel_id: row.funnel_id,
     funnel_version: row.funnel_version,
+    experiment_id: row.experiment_id,
     variant: row.variant,
     variant_source: row.variant_source,
     created_at: row.created_at,
+    expires_at: row.expires_at,
     completed_at: row.completed_at,
     current_step_id: row.current_step_id,
+    result_id: onResult ? (row.result_id ?? resolveResultId(funnel, answers)) : null,
     path: progress.path,
     progress: { index: progress.index, total: progress.total, ratio: progress.ratio },
     answers,
@@ -94,28 +109,28 @@ export const createSession = (
   const { version, config } = getActiveConfig(db);
   const sessionId = newId();
   const override = options.variantOverride ?? null;
-  const hasOverride = override !== null && config.variants.some((variant) => variant.key === override);
+  const hasOverride = override !== null && Object.hasOwn(config.experiment.variants, override);
   const variant = hasOverride ? (override as VariantKey) : assignVariant(config, sessionId, options.salt);
-  const resolved = resolveVariant(config, variant);
-  const firstStep = resolved.steps[0];
-  if (!firstStep) throw badRequest('active funnel version has no steps for this variant');
+  const funnel = resolveVariant(config, variant);
 
   const now = options.createdAt ?? new Date().toISOString();
+  const expiresAt = new Date(Date.parse(now) + config.session.ttlHours * 3_600_000).toISOString();
   const utm = options.utm ?? {};
 
   db.prepare(
     `INSERT INTO sessions (
-       id, funnel_id, funnel_version, variant, variant_source, current_step_id,
+       id, funnel_id, funnel_version, experiment_id, variant, variant_source, current_step_id, result_id,
        utm_source, utm_medium, utm_campaign, utm_content, utm_term,
-       created_at, last_seen_at, completed_at
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
+       created_at, last_seen_at, expires_at, completed_at
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
   ).run(
     sessionId,
     config.funnelId,
     version,
+    config.experiment.id,
     variant,
     hasOverride ? 'override' : 'assigned',
-    firstStep.id,
+    firstStepId(funnel),
     utm.utm_source ?? null,
     utm.utm_medium ?? null,
     utm.utm_campaign ?? null,
@@ -123,22 +138,30 @@ export const createSession = (
     utm.utm_term ?? null,
     now,
     now,
+    expiresAt,
   );
 
-  return requireSessionRow(db, sessionId);
+  const row = getSessionRow(db, sessionId);
+  if (!row) throw new Error('session insert did not produce a row');
+  return row;
 };
 
-export const touchSession = (db: Database, sessionId: string, at?: string): void => {
-  db.prepare('UPDATE sessions SET last_seen_at = ? WHERE id = ?').run(at ?? new Date().toISOString(), sessionId);
-};
+const setCurrentStep = (
+  db: Database,
+  row: SessionRow,
+  funnel: ResolvedFunnel,
+  answers: Answers,
+  stepId: string,
+  at: string,
+): void => {
+  const isResult = funnel.steps.find((step) => step.id === stepId)?.type === 'result';
+  const resultId = isResult ? resolveResultId(funnel, answers) : null;
 
-const setCurrentStep = (db: Database, sessionId: string, stepId: string, at: string): void => {
-  const completedAt = stepId === RESULT_STEP_ID ? at : null;
   db.prepare(
     `UPDATE sessions
-     SET current_step_id = ?, last_seen_at = ?, completed_at = COALESCE(completed_at, ?)
+     SET current_step_id = ?, result_id = COALESCE(?, result_id), last_seen_at = ?, completed_at = COALESCE(completed_at, ?)
      WHERE id = ?`,
-  ).run(stepId, at, completedAt, sessionId);
+  ).run(stepId, resultId, at, isResult ? at : null, row.id);
 };
 
 export const submitAnswer = (
@@ -150,11 +173,13 @@ export const submitAnswer = (
 ): SessionView => {
   const funnel = getResolvedFunnel(db, row);
   const step = funnel.steps.find((candidate) => candidate.id === stepId);
-  if (!step) throw badRequest(`step "${stepId}" does not exist in variant ${row.variant} of version ${row.funnel_version}`);
+  if (!step) {
+    throw badRequest(`step "${stepId}" does not exist in variant ${row.variant} of version ${row.funnel_version}`);
+  }
 
   const answersBefore = getAnswers(db, row.id);
-  if (!computeProgress(funnel.steps, answersBefore, stepId).path.includes(stepId)) {
-    throw badRequest(`step "${stepId}" is not reachable with the answers collected so far`);
+  if (!visibleStepIds(funnel, answersBefore).includes(stepId)) {
+    throw badRequest(`step "${stepId}" is not visible with the answers collected so far`);
   }
 
   const error = validateAnswer(step, value);
@@ -169,9 +194,8 @@ export const submitAnswer = (
        ON CONFLICT (session_id, step_id) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at`,
     ).run(row.id, stepId, JSON.stringify(normalized), now);
 
-    const answersAfter = { ...answersBefore, [stepId]: normalized };
-    const path = computeProgress(funnel.steps, answersAfter, stepId).path;
-    const reachable = new Set(path);
+    const answersAfter: Answers = { ...answersBefore, [stepId]: normalized };
+    const reachable = new Set(visibleStepIds(funnel, answersAfter));
 
     for (const answeredStep of Object.keys(answersAfter)) {
       if (!reachable.has(answeredStep)) {
@@ -180,7 +204,7 @@ export const submitAnswer = (
       }
     }
 
-    setCurrentStep(db, row.id, getNextStepId(funnel.steps, stepId, answersAfter), now);
+    setCurrentStep(db, row, funnel, answersAfter, getNextStepId(funnel, stepId, answersAfter), now);
   });
 
   return buildSessionView(db, requireSessionRow(db, row.id));
@@ -189,15 +213,22 @@ export const submitAnswer = (
 export const goToStep = (db: Database, row: SessionRow, stepId: string, at?: string): SessionView => {
   const funnel = getResolvedFunnel(db, row);
   const answers = getAnswers(db, row.id);
-  const path = computeProgress(funnel.steps, answers, row.current_step_id).path;
 
-  if (stepId !== RESULT_STEP_ID && !path.includes(stepId)) {
+  if (!visibleStepIds(funnel, answers).includes(stepId)) {
     throw badRequest(`step "${stepId}" is not part of the current path`);
   }
 
-  setCurrentStep(db, row.id, stepId, at ?? new Date().toISOString());
+  setCurrentStep(db, row, funnel, answers, stepId, at ?? new Date().toISOString());
   return buildSessionView(db, requireSessionRow(db, row.id));
 };
+
+export const previousStepOf = (db: Database, row: SessionRow): string | null => {
+  const funnel = getResolvedFunnel(db, row);
+  return getPreviousStepId(funnel, row.current_step_id, getAnswers(db, row.id));
+};
+
+export const resultStepOf = (db: Database, row: SessionRow): string | null =>
+  resultStepId(getResolvedFunnel(db, row));
 
 export const parseUtm = (query: Record<string, unknown>): Partial<Utm> => {
   const utm: Record<string, string | null> = {};

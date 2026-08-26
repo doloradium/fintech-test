@@ -17,7 +17,7 @@ export const appConfig = {
   databaseFile: fromEnv('DATABASE_FILE', ''),
   configDir: path.resolve(repoRoot, fromEnv('CONFIG_DIR', 'configs')),
   webDist: path.resolve(repoRoot, fromEnv('WEB_DIST', 'apps/web/dist')),
-  bootstrapConfig: fromEnv('BOOTSTRAP_CONFIG', 'funnel.v1.json'),
+  bootstrapConfig: fromEnv('BOOTSTRAP_CONFIG', 'funnel-v1.json'),
   adminToken: process.env.ADMIN_TOKEN ?? null,
   experimentSalt: fromEnv('EXPERIMENT_SALT', 'funnel-runtime'),
   serveWeb: fromEnv('SERVE_WEB', 'true') !== 'false',

@@ -10,7 +10,8 @@ export const migrations: Migration[] = [
       CREATE TABLE funnel_versions (
         version INTEGER PRIMARY KEY,
         funnel_id TEXT NOT NULL,
-        name TEXT NOT NULL,
+        title TEXT NOT NULL,
+        schema_version TEXT NOT NULL,
         config_json TEXT NOT NULL,
         checksum TEXT NOT NULL,
         source TEXT,
@@ -37,9 +38,11 @@ export const migrations: Migration[] = [
         id TEXT PRIMARY KEY,
         funnel_id TEXT NOT NULL,
         funnel_version INTEGER NOT NULL,
+        experiment_id TEXT NOT NULL,
         variant TEXT NOT NULL,
         variant_source TEXT NOT NULL,
         current_step_id TEXT NOT NULL,
+        result_id TEXT,
         utm_source TEXT,
         utm_medium TEXT,
         utm_campaign TEXT,
@@ -47,6 +50,7 @@ export const migrations: Migration[] = [
         utm_term TEXT,
         created_at TEXT NOT NULL,
         last_seen_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
         completed_at TEXT
       );
 
@@ -66,23 +70,26 @@ export const migrations: Migration[] = [
       CREATE TABLE events (
         event_id TEXT PRIMARY KEY,
         session_id TEXT NOT NULL,
-        type TEXT NOT NULL,
+        name TEXT NOT NULL,
+        funnel_id TEXT NOT NULL,
         funnel_version INTEGER NOT NULL,
+        experiment_id TEXT NOT NULL,
         variant TEXT NOT NULL,
         step_id TEXT,
+        result_id TEXT,
         seq INTEGER,
-        client_ts TEXT NOT NULL,
-        server_ts TEXT NOT NULL,
+        client_timestamp TEXT NOT NULL,
+        server_timestamp TEXT NOT NULL,
         utm_source TEXT,
         utm_medium TEXT,
         utm_campaign TEXT,
         utm_content TEXT,
         utm_term TEXT,
-        props_json TEXT
+        properties_json TEXT
       );
 
       CREATE INDEX idx_events_session ON events (session_id);
-      CREATE INDEX idx_events_type ON events (type);
+      CREATE INDEX idx_events_name ON events (name);
       CREATE INDEX idx_events_version_variant ON events (funnel_version, variant);
       CREATE INDEX idx_events_step ON events (step_id);
 

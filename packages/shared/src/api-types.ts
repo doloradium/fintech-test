@@ -11,12 +11,16 @@ export type SessionProgress = {
 
 export type SessionView = {
   session_id: string;
+  funnel_id: string;
   funnel_version: number;
+  experiment_id: string;
   variant: VariantKey;
   variant_source: 'assigned' | 'override';
   created_at: string;
+  expires_at: string;
   completed_at: string | null;
   current_step_id: string;
+  result_id: string | null;
   path: string[];
   progress: SessionProgress;
   answers: Answers;
@@ -24,22 +28,20 @@ export type SessionView = {
   funnel: ResolvedFunnel;
 };
 
-export type AdvanceResponse = {
-  ok: true;
-  session: SessionView;
-};
-
 export type VersionSummary = {
   version: number;
   funnel_id: string;
-  name: string;
+  title: string;
+  schema_version: string;
   checksum: string;
   notes: string | null;
   created_at: string;
   is_active: boolean;
   steps: number;
   sessions: number;
-  variants: Array<{ key: VariantKey; label: string; steps: number }>;
+  results: number;
+  events: string[];
+  variants: Array<{ key: VariantKey; steps: number; weight: number }>;
 };
 
 export type ActivationEntry = {
@@ -55,7 +57,7 @@ export type VersionsResponse = {
   active_version: number | null;
   versions: VersionSummary[];
   activations: ActivationEntry[];
-  bundled_configs: Array<{ file: string; name: string; funnel_id: string; steps: number }>;
+  bundled_configs: Array<{ file: string; title: string; funnel_id: string; steps: number }>;
 };
 
 export type FunnelOverview = {
@@ -69,6 +71,7 @@ export type FunnelOverview = {
 export type StepMetrics = {
   stepId: string;
   title: string | null;
+  type: string | null;
   entered: number;
   completed: number;
   continued: number;
@@ -100,7 +103,8 @@ export type AnalyticsResponse = {
   byVariant: SegmentMetrics[];
   byVersion: SegmentMetrics[];
   byCampaign: SegmentMetrics[];
-  eventCounts: Array<{ type: string; events: number; sessions: number }>;
+  byResult: Array<{ resultId: string; title: string | null; sessions: number; ctaClicks: number; ctaCtr: number }>;
+  eventCounts: Array<{ name: string; events: number; sessions: number }>;
   dataQuality: {
     events: number;
     duplicateAttempts: number;

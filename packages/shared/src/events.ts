@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const CORE_EVENT_TYPES = [
+export const CORE_EVENT_NAMES = [
   'session_started',
   'step_viewed',
   'answer_submitted',
@@ -10,27 +10,29 @@ export const CORE_EVENT_TYPES = [
   'cta_clicked',
 ] as const;
 
-export type CoreEventType = (typeof CORE_EVENT_TYPES)[number];
+export type CoreEventName = (typeof CORE_EVENT_NAMES)[number];
 
-export const STEP_SCOPED_EVENT_TYPES: readonly string[] = [
+export const STEP_SCOPED_EVENT_NAMES: readonly string[] = [
   'step_viewed',
   'answer_submitted',
   'step_completed',
   'back_clicked',
+  'result_viewed',
+  'cta_clicked',
 ];
 
-export const eventTypeSchema = z
+export const eventNameSchema = z
   .string()
-  .regex(/^[a-z][a-z0-9_]{2,63}$/, 'event type must be snake_case, 3..64 chars');
+  .regex(/^[a-z][a-z0-9_]{2,63}$/, 'event name must be snake_case, 3..64 chars');
 
 export const eventInputSchema = z.object({
   event_id: z.string().min(8).max(64),
   session_id: z.string().min(8).max(64),
-  type: eventTypeSchema,
-  client_ts: z.iso.datetime({ offset: true }),
+  name: eventNameSchema,
+  client_timestamp: z.iso.datetime({ offset: true }),
   seq: z.number().int().min(0).optional(),
   step_id: z.string().max(64).nullish(),
-  props: z.record(z.string(), z.unknown()).nullish(),
+  properties: z.record(z.string(), z.unknown()).nullish(),
 });
 
 export type EventInput = z.infer<typeof eventInputSchema>;
@@ -52,6 +54,8 @@ export type IngestResult = {
   rejected: EventRejection[];
 };
 
+export const UTM_KEYS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term'] as const;
+
 export const utmSchema = z.object({
   utm_source: z.string().max(120).nullish(),
   utm_medium: z.string().max(120).nullish(),
@@ -61,5 +65,3 @@ export const utmSchema = z.object({
 });
 
 export type Utm = z.infer<typeof utmSchema>;
-
-export const UTM_KEYS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term'] as const;

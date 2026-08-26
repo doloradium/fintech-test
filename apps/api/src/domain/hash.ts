@@ -13,18 +13,22 @@ const bucketOf = (input: string): number => {
 };
 
 export const assignVariant = (config: FunnelConfig, sessionId: string, salt: string): VariantKey => {
-  const weighted = config.variants.filter((variant) => variant.weight > 0);
-  const pool = weighted.length > 0 ? weighted : config.variants;
-  const total = pool.reduce((sum, variant) => sum + Math.max(variant.weight, 0), 0);
-  if (total <= 0) return pool[0]?.key ?? 'A';
+  const entries = Object.entries(config.experiment.variants);
+  const weighted = entries.filter(([, variant]) => variant.weight > 0);
+  const pool = weighted.length > 0 ? weighted : entries;
+  const fallback = pool[0]?.[0];
+  if (!fallback) throw new Error('the funnel version declares no experiment variants');
 
-  const bucket = bucketOf(`${salt}:${config.experiment.key}:${sessionId}`) / 10_000;
+  const total = pool.reduce((sum, [, variant]) => sum + Math.max(variant.weight, 0), 0);
+  if (total <= 0) return fallback;
+
+  const bucket = bucketOf(`${salt}:${config.experiment.id}:${sessionId}`) / 10_000;
   let cursor = 0;
 
-  for (const variant of pool) {
+  for (const [key, variant] of pool) {
     cursor += Math.max(variant.weight, 0) / total;
-    if (bucket < cursor) return variant.key;
+    if (bucket < cursor) return key;
   }
 
-  return pool[pool.length - 1]?.key ?? 'A';
+  return pool[pool.length - 1]?.[0] ?? fallback;
 };

@@ -9,13 +9,13 @@ type Props = {
   onChange: (value: AnswerValue) => void;
   onSubmit: () => void;
   onBack: () => void;
-  onHint: () => void;
 };
 
 const asArray = (value: AnswerValue | undefined): string[] => (Array.isArray(value) ? value : []);
 
-export const StepView = ({ step, value, error, busy, canGoBack, onChange, onSubmit, onBack, onHint }: Props) => {
-  const submitLabel = step.type === 'info' ? (step.ctaLabel ?? 'Далее') : 'Далее';
+export const StepView = ({ step, value, error, busy, canGoBack, onChange, onSubmit, onBack }: Props) => {
+  const options = step.input?.options ?? [];
+  const submitLabel = step.content.primaryActionLabel ?? 'Continue';
 
   return (
     <form
@@ -26,25 +26,19 @@ export const StepView = ({ step, value, error, busy, canGoBack, onChange, onSubm
       }}
     >
       <header className="step__head">
-        <h1 className="step__title">{step.title}</h1>
-        {step.subtitle ? <p className="step__subtitle">{step.subtitle}</p> : null}
+        {step.content.eyebrow ? <p className="badge badge--muted">{step.content.eyebrow}</p> : null}
+        <h1 className="step__title">{step.content.title ?? step.id}</h1>
+        {step.content.body ? <p className="step__subtitle">{step.content.body}</p> : null}
+        {step.content.helperText ? <p className="step__helper">{step.content.helperText}</p> : null}
       </header>
 
-      {step.type === 'info' ? (
-        <ul className="info-list">
-          {step.body.map((line, index) => (
-            <li key={index}>{line}</li>
-          ))}
-        </ul>
-      ) : null}
-
-      {step.type === 'single_select' ? (
+      {step.type === 'single-select' ? (
         <div className="options">
-          {step.options.map((option, index) => (
+          {options.map((option, index) => (
             <label key={index} className={`option ${value === option.value ? 'option--active' : ''}`}>
               <input
                 type="radio"
-                name={step.id}
+                name={step.input?.name ?? step.id}
                 checked={value === option.value}
                 onChange={() => onChange(option.value)}
               />
@@ -57,15 +51,15 @@ export const StepView = ({ step, value, error, busy, canGoBack, onChange, onSubm
         </div>
       ) : null}
 
-      {step.type === 'multi_select' ? (
+      {step.type === 'multi-select' ? (
         <div className="options">
-          {step.options.map((option, index) => {
+          {options.map((option, index) => {
             const selected = asArray(value).includes(option.value);
             return (
               <label key={index} className={`option ${selected ? 'option--active' : ''}`}>
                 <input
                   type="checkbox"
-                  name={step.id}
+                  name={step.input?.name ?? step.id}
                   checked={selected}
                   onChange={() => {
                     const current = asArray(value);
@@ -88,37 +82,25 @@ export const StepView = ({ step, value, error, busy, canGoBack, onChange, onSubm
             className="input"
             type="number"
             inputMode="numeric"
-            min={step.min}
-            max={step.max}
-            step={step.integer ? 1 : 'any'}
-            placeholder={step.placeholder ?? ''}
+            min={step.input?.min}
+            max={step.input?.max}
+            step={step.input?.step ?? 'any'}
+            placeholder={step.input?.placeholder ?? ''}
             value={typeof value === 'number' || typeof value === 'string' ? String(value) : ''}
             onChange={(event) => onChange(event.target.value === '' ? null : Number(event.target.value))}
           />
-          {step.unit ? <span className="number-field__unit">{step.unit}</span> : null}
+          {step.input?.unit ? <span className="number-field__unit">{step.input.unit}</span> : null}
         </div>
-      ) : null}
-
-      {step.hint ? (
-        <details
-          className="hint"
-          onToggle={(event) => {
-            if ((event.currentTarget as HTMLDetailsElement).open) onHint();
-          }}
-        >
-          <summary>Подсказка</summary>
-          <p>{step.hint}</p>
-        </details>
       ) : null}
 
       {error ? <p className="error">{error}</p> : null}
 
       <footer className="step__foot">
         <button type="button" className="button button--ghost" onClick={onBack} disabled={!canGoBack || busy}>
-          Назад
+          {step.content.backActionLabel ?? 'Back'}
         </button>
         <button type="submit" className="button" disabled={busy}>
-          {busy ? 'Сохраняем…' : submitLabel}
+          {busy ? 'Saving…' : submitLabel}
         </button>
       </footer>
     </form>
