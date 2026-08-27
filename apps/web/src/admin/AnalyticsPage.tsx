@@ -20,15 +20,17 @@ const NO_CAMPAIGN = '__none__';
 
 const percent = (value: number): string => `${(value * 100).toFixed(1)}%`;
 
-const upliftOf = (segments: SegmentMetrics[], metric: 'ctaCtr' | 'completionRate'): number | null => {
-  const control = segments.find((segment) => segment.key === 'A');
-  const test = segments.find((segment) => segment.key === 'B');
+type Uplift = { value: number; control: string; test: string };
+
+const upliftOf = (segments: SegmentMetrics[], metric: 'ctaCtr' | 'completionRate'): Uplift | null => {
+  if (segments.length !== 2) return null;
+  const [control, test] = segments;
   if (!control || !test || control[metric] === 0) return null;
-  return (test[metric] - control[metric]) / control[metric];
+  return { value: (test[metric] - control[metric]) / control[metric], control: control.key, test: test.key };
 };
 
-const formatUplift = (value: number | null): string =>
-  value === null ? '—' : `${value >= 0 ? '+' : ''}${(value * 100).toFixed(1)}%`;
+const formatUplift = (uplift: Uplift | null): string =>
+  uplift === null ? '—' : `${uplift.value >= 0 ? '+' : ''}${(uplift.value * 100).toFixed(1)}%`;
 
 const Kpi = ({ label, value, hint }: { label: string; value: string; hint?: string }) => (
   <Card>
@@ -188,7 +190,7 @@ export const AnalyticsPage = () => {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value={ALL}>A и B</SelectItem>
+                <SelectItem value={ALL}>Все варианты</SelectItem>
                 {data.available.variants.map((item, index) => (
                   <SelectItem key={index} value={item}>
                     Вариант {item}
@@ -237,15 +239,17 @@ export const AnalyticsPage = () => {
         <Kpi label="Кликнули CTA" value={String(data.overview.ctaClicks)} hint={percent(data.overview.ctaCtr)} />
         <Card>
           <CardHeader className="gap-1">
-            <CardDescription>Uplift B к A по CTR</CardDescription>
+            <CardDescription>
+              {ctrUplift ? `Uplift ${ctrUplift.test} к ${ctrUplift.control} по CTR` : 'Uplift по CTR'}
+            </CardDescription>
             <CardTitle
               className={cn(
                 'flex items-center gap-2 text-3xl tabular-nums',
-                ctrUplift !== null && ctrUplift < 0 && 'text-destructive',
+                ctrUplift !== null && ctrUplift.value < 0 && 'text-destructive',
               )}
             >
               {ctrUplift !== null ? (
-                ctrUplift >= 0 ? (
+                ctrUplift.value >= 0 ? (
                   <TrendingUp className="size-6" aria-hidden />
                 ) : (
                   <TrendingDown className="size-6" aria-hidden />
@@ -327,10 +331,14 @@ export const AnalyticsPage = () => {
       </Card>
 
       <SegmentTable
-        title="A/B: сравнение вариантов"
-        description={`Uplift B к A: CTR ${formatUplift(ctrUplift)}, конверсия в результат ${formatUplift(
-          upliftOf(data.byVariant, 'completionRate'),
-        )}`}
+        title="Сравнение вариантов эксперимента"
+        description={
+          ctrUplift
+            ? `Uplift ${ctrUplift.test} к ${ctrUplift.control}: CTR ${formatUplift(ctrUplift)}, конверсия в результат ${formatUplift(
+                upliftOf(data.byVariant, 'completionRate'),
+              )}`
+            : undefined
+        }
         rows={data.byVariant}
       />
       <SegmentTable title="Сравнение версий воронки" rows={data.byVersion} />

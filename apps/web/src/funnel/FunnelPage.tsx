@@ -34,9 +34,11 @@ const requestedVariantOf = (restored: SessionView): string | null => {
   if (!raw || raw.trim() === '') return null;
   const candidate = raw.trim();
   const keys = restored.funnel.variantKeys;
-  if (keys.includes(candidate)) return candidate;
-  const upper = candidate.toUpperCase();
-  return keys.includes(upper) ? upper : null;
+  return (
+    keys.find((key) => key === candidate) ??
+    keys.find((key) => key.toLowerCase() === candidate.toLowerCase()) ??
+    null
+  );
 };
 
 export const FunnelPage = () => {

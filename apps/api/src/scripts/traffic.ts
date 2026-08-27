@@ -117,12 +117,20 @@ const shuffle = <T>(items: T[], random: () => number): T[] => {
   return copy;
 };
 
+let knownVariantKeys: string[] = [];
+
 const runSession = async (args: TrafficArgs, sessionIndex: number, stats: TrafficStats): Promise<void> => {
   const random = mulberry32((args.seed ^ Math.imul(sessionIndex + 1, 0x9e3779b9)) >>> 0);
   const utm = UTM_POOL[Math.floor(random() * UTM_POOL.length)] ?? UTM_POOL[0];
-  const forceVariant = random() < 0.06 ? (random() < 0.5 ? 'A' : 'B') : null;
+  const forceRoll = random();
+  const forcePick = random();
+  const forceVariant =
+    knownVariantKeys.length > 0 && forceRoll < 0.06
+      ? (knownVariantKeys[Math.floor(forcePick * knownVariantKeys.length)] ?? null)
+      : null;
 
   let view = (await post(`${args.url}/api/sessions`, { utm, variant: forceVariant })) as SessionView;
+  knownVariantKeys = view.funnel.variantKeys;
   stats.sessions += 1;
   stats.variants[view.variant] = (stats.variants[view.variant] ?? 0) + 1;
 

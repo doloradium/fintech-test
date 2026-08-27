@@ -37,9 +37,12 @@ const normalizeVariantOverride = (
   if (typeof raw !== 'string') return null;
   const candidate = raw.trim();
   if (candidate === '') return null;
-  if (Object.hasOwn(config.experiment.variants, candidate)) return candidate;
-  const upper = candidate.toUpperCase();
-  return Object.hasOwn(config.experiment.variants, upper) ? upper : null;
+  const keys = Object.keys(config.experiment.variants);
+  return (
+    keys.find((key) => key === candidate) ??
+    keys.find((key) => key.toLowerCase() === candidate.toLowerCase()) ??
+    null
+  );
 };
 
 

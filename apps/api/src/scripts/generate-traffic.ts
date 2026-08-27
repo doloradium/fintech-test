@@ -37,8 +37,11 @@ const main = async (): Promise<void> => {
     Сессий: stats.sessions,
     'Дошли до результата': stats.completed,
     'Клики по CTA': stats.ctaClicks,
-    'Вариант A': stats.variants.A ?? 0,
-    'Вариант B': stats.variants.B ?? 0,
+    ...Object.fromEntries(
+      Object.entries(stats.variants)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([key, count]) => [`Вариант ${key}`, count]),
+    ),
     'Пачек отправлено': stats.batchesSent,
     'Пачек продублировано': stats.batchesResent,
     'Пачек с нарушенным порядком': stats.shuffledBatches,

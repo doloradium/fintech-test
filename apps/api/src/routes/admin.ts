@@ -38,7 +38,7 @@ const seedBody = z
 
 const analyticsQuery = z.object({
   version: z.coerce.number().int().positive().nullish(),
-  variant: z.enum(['A', 'B']).nullish(),
+  variant: z.string().min(1).max(32).nullish(),
   utm_campaign: z.string().nullish(),
   from: z.string().nullish(),
   to: z.string().nullish(),

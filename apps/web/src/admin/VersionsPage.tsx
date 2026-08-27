@@ -110,7 +110,11 @@ export const VersionsPage = () => {
                 <div className="flex flex-wrap gap-2">
                   {activeVersion.variants.map((variant, index) => (
                     <Button key={index} asChild size="sm" variant="outline">
-                      <a href={`/?variant=${variant.key}`} target="_blank" rel="noreferrer">
+                      <a
+                        href={`/?${activeVersion.override_query_param || 'variant'}=${encodeURIComponent(variant.key)}`}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
                         <ExternalLink />
                         Вариант {variant.key}
                       </a>

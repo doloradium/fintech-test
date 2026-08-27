@@ -42,6 +42,7 @@ export type VersionSummary = {
   sessions: number;
   results: number;
   events: string[];
+  override_query_param: string;
   variants: Array<{ key: VariantKey; steps: number; weight: number }>;
 };
 

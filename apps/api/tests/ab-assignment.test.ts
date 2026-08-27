@@ -1,5 +1,7 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { createSession, createTestApp, readSession, sendEvents, event, type TestApp } from './helpers.js';
+import { configDir, createSession, createTestApp, readSession, sendEvents, event, json, type TestApp } from './helpers.js';
 
 describe('стабильность A/B-варианта', () => {
   let ctx: TestApp;
@@ -78,6 +80,36 @@ describe('стабильность A/B-варианта', () => {
       experiment_id: session.experiment_id,
       variant: session.variant,
     });
+  });
+
+  it('ключи вариантов берутся из конфига: работают не только A и B', async () => {
+    const raw = JSON.parse(fs.readFileSync(path.join(configDir, 'funnel-minimal.json'), 'utf8')) as {
+      experiment: { variants: Record<string, unknown> };
+    };
+    const { A, B } = raw.experiment.variants as Record<string, unknown>;
+    raw.experiment.variants = { control: A, turbo: B };
+
+    const published = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/admin/versions',
+      payload: { config: raw },
+    });
+    expect(published.statusCode).toBe(201);
+
+    const exact = await createSession(ctx.app, '?variant=turbo');
+    expect(exact.variant).toBe('turbo');
+    expect(exact.variant_source).toBe('override');
+    expect(exact.funnel.variantKeys.sort()).toEqual(['control', 'turbo']);
+
+    const uppercase = await createSession(ctx.app, '?variant=TURBO');
+    expect(uppercase.variant).toBe('turbo');
+    expect(uppercase.variant_source).toBe('override');
+
+    const filtered = json<{ overview: { sessions: number }; byVariant: Array<{ key: string }> }>(
+      (await ctx.app.inject({ method: 'GET', url: '/api/admin/analytics?variant=turbo' })).body,
+    );
+    expect(filtered.overview.sessions).toBe(2);
+    expect(filtered.byVariant.map((row) => row.key)).toEqual(['turbo']);
   });
 
   it('вариант назначается детерминированно: одна и та же сессия даёт тот же бакет', async () => {

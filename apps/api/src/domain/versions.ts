@@ -175,6 +175,7 @@ export const listVersions = (db: Database): VersionSummary[] => {
       sessions: sessionCounts.get(row.version) ?? 0,
       results: Object.keys(config.results).length,
       events: config.events.allowed.map((event) => event.name),
+      override_query_param: config.experiment.overrideQueryParam,
       variants: Object.entries(config.experiment.variants).map(([key, variant]) => ({
         key,
         steps: variant.stepSequence.length,
