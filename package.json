@@ -16,7 +16,7 @@
     "dev:web": "npm run dev --workspace @funnel/web",
     "build": "npm run build --workspace @funnel/shared && npm run build --workspace @funnel/api && npm run build --workspace @funnel/web",
     "start": "npm run start --workspace @funnel/api",
-    "seed": "npm run seed --workspace @funnel/api",
+    "seed": "tsx --disable-warning=ExperimentalWarning apps/api/src/scripts/generate-traffic.ts",
     "test": "npm run test --workspace @funnel/api",
     "typecheck": "tsc -b packages/shared apps/api && tsc -p apps/web --noEmit",
     "reset": "rm -rf data",

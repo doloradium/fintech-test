@@ -211,11 +211,23 @@ export const funnelConfigSchema = z
         }
       }
 
-      if (!variant.stepSequence.some((stepId) => config.steps[stepId]?.type === 'result')) {
+      const lastStepId = variant.stepSequence[variant.stepSequence.length - 1];
+      if (!lastStepId || config.steps[lastStepId]?.type !== 'result') {
         ctx.addIssue({
           code: 'custom',
           path: ['experiment', 'variants', key, 'stepSequence'],
           message: 'stepSequence must end on a result step',
+        });
+      }
+
+      const misplacedResult = variant.stepSequence
+        .slice(0, -1)
+        .find((stepId) => config.steps[stepId]?.type === 'result');
+      if (misplacedResult) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['experiment', 'variants', key, 'stepSequence'],
+          message: `result step "${misplacedResult}" must be the last step of the sequence`,
         });
       }
     }

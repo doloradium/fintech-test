@@ -171,6 +171,27 @@ describe('публикация и откат версии', () => {
     expect(back.progress.ratio).toBe(onWorkMode.ratio);
   });
 
+  it('конфиг с результатом не в конце последовательности отклоняется', async () => {
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    const { configDir } = await import('./helpers.js');
+    const raw = JSON.parse(fs.readFileSync(path.join(configDir, 'funnel-minimal.json'), 'utf8')) as {
+      experiment: { variants: Record<string, { stepSequence: string[] }> };
+    };
+
+    const variantA = raw.experiment.variants.A;
+    if (!variantA) throw new Error('minimal config lost variant A');
+    variantA.stepSequence = ['intro', 'pace', 'result', 'team_size', 'tools', 'focus'];
+
+    const response = await ctx.app.inject({ method: 'POST', url: '/api/admin/versions', payload: { config: raw } });
+    expect(response.statusCode).toBe(400);
+
+    const body = JSON.parse(response.body) as { details: Array<{ message: string }> };
+    const messages = body.details.map((issue) => issue.message).join('; ');
+    expect(messages).toContain('must end on a result step');
+    expect(messages).toContain('must be the last step');
+  });
+
   it('нельзя перепрыгнуть вперёд дальше первого неотвеченного шага', async () => {
     const session = await createSession(ctx.app, '?variant=A');
 
