@@ -122,7 +122,8 @@ const shuffle = <T>(items: T[], random: () => number): T[] => {
   return copy;
 };
 
-const runSession = async (args: Args, random: () => number, stats: Stats): Promise<void> => {
+const runSession = async (args: Args, sessionIndex: number, stats: Stats): Promise<void> => {
+  const random = mulberry32((args.seed ^ Math.imul(sessionIndex + 1, 0x9e3779b9)) >>> 0);
   const utm = UTM_POOL[Math.floor(random() * UTM_POOL.length)] ?? UTM_POOL[0];
   const forceVariant = random() < 0.06 ? (random() < 0.5 ? 'A' : 'B') : null;
 
@@ -251,7 +252,6 @@ const runSession = async (args: Args, random: () => number, stats: Stats): Promi
 
 const main = async (): Promise<void> => {
   const args = parseArgs(process.argv.slice(2));
-  const random = mulberry32(args.seed);
 
   const health = await fetch(`${args.url}/api/health`).catch(() => null);
   if (!health || !health.ok) {
@@ -279,8 +279,9 @@ const main = async (): Promise<void> => {
 
   const worker = async (): Promise<void> => {
     while (cursor < args.sessions) {
+      const sessionIndex = cursor;
       cursor += 1;
-      await runSession(args, random, stats);
+      await runSession(args, sessionIndex, stats);
     }
   };
 

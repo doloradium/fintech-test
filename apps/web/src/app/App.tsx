@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Moon, Sun, Workflow } from 'lucide-react';
 import { NavLink, Navigate, Route, Routes } from 'react-router-dom';
 import { FunnelPage } from '@/funnel/FunnelPage';
@@ -14,12 +15,18 @@ const NAV = [
   { to: '/admin/analytics', label: 'Аналитика', end: false },
 ];
 
-const AdminLayout = ({ children }: { children: React.ReactNode }) => (
-  <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
-    <AdminTokenField />
-    {children}
-  </div>
-);
+const AdminLayout = ({ children }: { children: React.ReactNode }) => {
+  const [tokenEpoch, setTokenEpoch] = useState(0);
+
+  return (
+    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
+      <AdminTokenField onSaved={() => setTokenEpoch((epoch) => epoch + 1)} />
+      <div key={tokenEpoch} className="contents">
+        {children}
+      </div>
+    </div>
+  );
+};
 
 export const App = () => {
   const { theme, toggleTheme } = useTheme();
