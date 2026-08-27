@@ -144,6 +144,12 @@ export const AnalyticsPage = () => {
     if (!data.available.variants.includes(variant)) setVariant(ALL);
   }, [data, variant]);
 
+  useEffect(() => {
+    if (!data || campaign === ALL) return;
+    const value = campaign === NO_CAMPAIGN ? '' : campaign;
+    if (!data.available.campaigns.includes(value)) setCampaign(ALL);
+  }, [data, campaign]);
+
 
   const seed = async () => {
     setSeeding(true);
@@ -376,7 +382,7 @@ export const AnalyticsPage = () => {
 
       <SegmentTable
         title="Сравнение вариантов эксперимента"
-        description="Контролем считается первая строка. Для осмысленного сравнения выберите конкретную версию в фильтре — иначе в таблицу попадают варианты разных версий."
+        description="Строки — варианты из конфига выбранной версии (или активной, если версия не выбрана), в порядке конфига. Контроль — первая строка; вариант без сессий в выборке показывается с нулями."
         rows={data.byVariant}
         withUplift
       />

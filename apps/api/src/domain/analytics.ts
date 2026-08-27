@@ -122,13 +122,32 @@ const canonicalOrder = (db: Database, query: AnalyticsQuery, seenSteps: Set<stri
 };
 
 const configVariantKeys = (db: Database, query: AnalyticsQuery): VariantKey[] | null => {
-  const version = query.version ?? getActiveVersion(db);
-  if (version === null) return null;
-  try {
-    return Object.keys(getConfig(db, version).experiment.variants);
-  } catch {
-    return null;
+  if (query.version != null) {
+    try {
+      return Object.keys(getConfig(db, query.version).experiment.variants);
+    } catch {
+      return null;
+    }
   }
+
+  const rows = db.prepare('SELECT version FROM funnel_versions ORDER BY version').all() as unknown as Array<{
+    version: number;
+  }>;
+  const keys: VariantKey[] = [];
+  const seen = new Set<string>();
+
+  for (const row of rows) {
+    try {
+      for (const key of Object.keys(getConfig(db, row.version).experiment.variants)) {
+        if (!seen.has(key)) {
+          seen.add(key);
+          keys.push(key);
+        }
+      }
+    } catch {}
+  }
+
+  return keys.length > 0 ? keys : null;
 };
 
 export const computeAnalytics = (db: Database, query: AnalyticsQuery = {}): AnalyticsResponse => {
@@ -337,7 +356,24 @@ export const computeAnalytics = (db: Database, query: AnalyticsQuery = {}): Anal
     filters,
     overview: overviewOf(sessionIds, facts),
     steps,
-    byVariant: groupBy((info) => info.variant, (key) => key),
+    byVariant: (() => {
+      const grouped = groupBy((info) => info.variant, (key) => key);
+      const keys = configVariantKeys(db, query);
+      if (!keys) return grouped;
+      const byKey = new Map(grouped.map((segment) => [segment.key, segment]));
+      return keys.map(
+        (key) =>
+          byKey.get(key) ?? {
+            key,
+            label: key,
+            sessions: 0,
+            reachedResult: 0,
+            ctaClicks: 0,
+            completionRate: 0,
+            ctaCtr: 0,
+          },
+      );
+    })(),
     byVersion: groupBy((info) => String(info.version), (key) => `Версия ${key}`),
     byCampaign: groupBy((info) => info.campaign, (key) => (key === '(none)' ? 'Без кампании' : key)),
     byResult: [...resultGroups.entries()]
@@ -371,9 +407,15 @@ export const computeAnalytics = (db: Database, query: AnalyticsQuery = {}): Anal
           db.prepare('SELECT DISTINCT variant AS v FROM sessions ORDER BY v').all() as unknown as Array<{ v: VariantKey }>
         ).map((row) => row.v),
       campaigns: (
-        db
-          .prepare("SELECT DISTINCT COALESCE(utm_campaign, '') AS v FROM sessions ORDER BY v")
-          .all() as unknown as Array<{ v: string }>
+        (query.version != null
+          ? db
+              .prepare(
+                "SELECT DISTINCT COALESCE(utm_campaign, '') AS v FROM sessions WHERE funnel_version = ? ORDER BY v",
+              )
+              .all(query.version)
+          : db.prepare("SELECT DISTINCT COALESCE(utm_campaign, '') AS v FROM sessions ORDER BY v").all()) as unknown as Array<{
+          v: string;
+        }>
       ).map((row) => row.v),
     },
   };

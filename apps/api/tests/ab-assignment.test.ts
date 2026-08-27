@@ -109,11 +109,17 @@ describe('стабильность A/B-варианта', () => {
       overview: { sessions: number };
       byVariant: Array<{ key: string; label: string }>;
       available: { variants: string[] };
-    }>((await ctx.app.inject({ method: 'GET', url: '/api/admin/analytics?variant=turbo' })).body);
+    }>((await ctx.app.inject({ method: 'GET', url: '/api/admin/analytics?version=2&variant=turbo' })).body);
     expect(filtered.overview.sessions).toBe(2);
-    expect(filtered.byVariant.map((row) => row.key)).toEqual(['turbo']);
-    expect(filtered.byVariant[0]?.label).toBe('turbo');
+    expect(filtered.byVariant.map((row) => row.key)).toEqual(['control', 'turbo']);
+    expect(filtered.byVariant.find((row) => row.key === 'turbo')?.sessions).toBe(2);
+    expect(filtered.byVariant.find((row) => row.key === 'control')?.sessions).toBe(0);
     expect(filtered.available.variants.sort()).toEqual(['control', 'turbo']);
+
+    const union = json<{ available: { variants: string[] } }>(
+      (await ctx.app.inject({ method: 'GET', url: '/api/admin/analytics' })).body,
+    );
+    expect(union.available.variants.sort()).toEqual(['A', 'B', 'control', 'turbo']);
   });
 
   it('вариант назначается детерминированно: одна и та же сессия даёт тот же бакет', async () => {
