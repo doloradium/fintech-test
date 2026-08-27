@@ -116,7 +116,7 @@ export const VersionsPage = () => {
                         rel="noreferrer"
                       >
                         <ExternalLink />
-                        Вариант {variant.key}
+                        <span className="font-mono">{variant.key}</span>
                       </a>
                     </Button>
                   ))}
