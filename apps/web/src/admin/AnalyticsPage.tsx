@@ -22,15 +22,20 @@ const percent = (value: number): string => `${(value * 100).toFixed(1)}%`;
 
 type Uplift = { value: number; control: string; test: string };
 
-const upliftOf = (segments: SegmentMetrics[], metric: 'ctaCtr' | 'completionRate'): Uplift | null => {
-  if (segments.length !== 2) return null;
-  const [control, test] = segments;
-  if (!control || !test || control[metric] === 0) return null;
-  return { value: (test[metric] - control[metric]) / control[metric], control: control.key, test: test.key };
+const upliftsVsControl = (segments: SegmentMetrics[], metric: 'ctaCtr' | 'completionRate'): Uplift[] => {
+  const control = segments[0];
+  if (!control || segments.length < 2 || control[metric] === 0) return [];
+  return segments.slice(1).map((segment) => ({
+    value: (segment[metric] - control[metric]) / control[metric],
+    control: control.key,
+    test: segment.key,
+  }));
 };
 
 const formatUplift = (uplift: Uplift | null): string =>
   uplift === null ? '—' : `${uplift.value >= 0 ? '+' : ''}${(uplift.value * 100).toFixed(1)}%`;
+
+const formatShare = (value: number): string => `${value >= 0 ? '+' : ''}${(value * 100).toFixed(1)}%`;
 
 const Kpi = ({ label, value, hint }: { label: string; value: string; hint?: string }) => (
   <Card>
@@ -42,42 +47,66 @@ const Kpi = ({ label, value, hint }: { label: string; value: string; hint?: stri
   </Card>
 );
 
-const SegmentTable = ({ title, description, rows }: { title: string; description?: string; rows: SegmentMetrics[] }) => (
-  <Card>
-    <CardHeader>
-      <CardTitle className="text-base">{title}</CardTitle>
-      {description ? <CardDescription>{description}</CardDescription> : null}
-    </CardHeader>
-    <CardContent>
-      <div className="overflow-x-auto">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Сегмент</TableHead>
-              <TableHead className="text-right">Сессий</TableHead>
-              <TableHead className="text-right">До результата</TableHead>
-              <TableHead className="text-right">Конверсия</TableHead>
-              <TableHead className="text-right">Кликов CTA</TableHead>
-              <TableHead className="text-right">CTR CTA</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {rows.map((row, index) => (
-              <TableRow key={index}>
-                <TableCell className="font-medium">{row.label}</TableCell>
-                <TableCell className="text-right tabular-nums">{row.sessions}</TableCell>
-                <TableCell className="text-right tabular-nums">{row.reachedResult}</TableCell>
-                <TableCell className="text-right tabular-nums">{percent(row.completionRate)}</TableCell>
-                <TableCell className="text-right tabular-nums">{row.ctaClicks}</TableCell>
-                <TableCell className="text-right font-medium tabular-nums">{percent(row.ctaCtr)}</TableCell>
+const SegmentTable = ({
+  title,
+  description,
+  rows,
+  withUplift = false,
+}: {
+  title: string;
+  description?: string;
+  rows: SegmentMetrics[];
+  withUplift?: boolean;
+}) => {
+  const control = withUplift && rows.length >= 2 ? rows[0] : null;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">{title}</CardTitle>
+        {description ? <CardDescription>{description}</CardDescription> : null}
+      </CardHeader>
+      <CardContent>
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Сегмент</TableHead>
+                <TableHead className="text-right">Сессий</TableHead>
+                <TableHead className="text-right">До результата</TableHead>
+                <TableHead className="text-right">Конверсия</TableHead>
+                <TableHead className="text-right">Кликов CTA</TableHead>
+                <TableHead className="text-right">CTR CTA</TableHead>
+                {control ? <TableHead className="text-right">Uplift CTR к контролю</TableHead> : null}
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </div>
-    </CardContent>
-  </Card>
-);
+            </TableHeader>
+            <TableBody>
+              {rows.map((row, index) => (
+                <TableRow key={index}>
+                  <TableCell className="font-medium">{row.label}</TableCell>
+                  <TableCell className="text-right tabular-nums">{row.sessions}</TableCell>
+                  <TableCell className="text-right tabular-nums">{row.reachedResult}</TableCell>
+                  <TableCell className="text-right tabular-nums">{percent(row.completionRate)}</TableCell>
+                  <TableCell className="text-right tabular-nums">{row.ctaClicks}</TableCell>
+                  <TableCell className="text-right font-medium tabular-nums">{percent(row.ctaCtr)}</TableCell>
+                  {control ? (
+                    <TableCell className="text-muted-foreground text-right tabular-nums">
+                      {index === 0
+                        ? 'контроль'
+                        : control.ctaCtr > 0
+                          ? formatShare((row.ctaCtr - control.ctaCtr) / control.ctaCtr)
+                          : '—'}
+                    </TableCell>
+                  ) : null}
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      </CardContent>
+    </Card>
+  );
+};
 
 export const AnalyticsPage = () => {
   const [data, setData] = useState<AnalyticsResponse | null>(null);
@@ -142,7 +171,13 @@ export const AnalyticsPage = () => {
   }
 
   const maxEntered = data.steps.reduce((max, step) => Math.max(max, step.entered), 0);
-  const ctrUplift = upliftOf(data.byVariant, 'ctaCtr');
+  const ctrUplifts = upliftsVsControl(data.byVariant, 'ctaCtr');
+  const ctrUplift =
+    ctrUplifts.length === 1
+      ? (ctrUplifts[0] ?? null)
+      : ctrUplifts.length > 1
+        ? ctrUplifts.reduce((best, candidate) => (candidate.value > best.value ? candidate : best))
+        : null;
 
   return (
     <div className="flex flex-col gap-6">
@@ -240,7 +275,11 @@ export const AnalyticsPage = () => {
         <Card>
           <CardHeader className="gap-1">
             <CardDescription>
-              {ctrUplift ? `Uplift ${ctrUplift.test} к ${ctrUplift.control} по CTR` : 'Uplift по CTR'}
+              {ctrUplift
+                ? ctrUplifts.length > 1
+                  ? `Лучший uplift к ${ctrUplift.control} по CTR: ${ctrUplift.test}`
+                  : `Uplift ${ctrUplift.test} к ${ctrUplift.control} по CTR`
+                : 'Uplift по CTR'}
             </CardDescription>
             <CardTitle
               className={cn(
@@ -332,14 +371,9 @@ export const AnalyticsPage = () => {
 
       <SegmentTable
         title="Сравнение вариантов эксперимента"
-        description={
-          ctrUplift
-            ? `Uplift ${ctrUplift.test} к ${ctrUplift.control}: CTR ${formatUplift(ctrUplift)}, конверсия в результат ${formatUplift(
-                upliftOf(data.byVariant, 'completionRate'),
-              )}`
-            : undefined
-        }
+        description="Контролем считается первая строка. Для осмысленного сравнения выберите конкретную версию в фильтре — иначе в таблицу попадают варианты разных версий."
         rows={data.byVariant}
+        withUplift
       />
       <SegmentTable title="Сравнение версий воронки" rows={data.byVersion} />
 
