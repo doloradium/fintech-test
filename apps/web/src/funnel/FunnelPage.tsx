@@ -50,6 +50,7 @@ export const FunnelPage = () => {
   const bootstrapped = useRef(false);
   const lastViewedRef = useRef<string>('');
   const navLock = useRef(false);
+  const pendingViewRef = useRef<SessionView | null>(null);
 
   const startSession = useCallback(async (): Promise<SessionView> => {
     const params = new URLSearchParams(window.location.search);
@@ -101,6 +102,15 @@ export const FunnelPage = () => {
     if (!view || navLock.current) return;
 
     const urlStep = new URLSearchParams(location.search).get('step');
+
+    const pending = pendingViewRef.current;
+    if (pending && urlStep === pending.current_step_id) {
+      pendingViewRef.current = null;
+      setStepError(null);
+      setView(pending);
+      return;
+    }
+
     const current = view.current_step_id;
     if (urlStep === current) return;
 
@@ -123,7 +133,6 @@ export const FunnelPage = () => {
         const updated = await request<SessionView>(`/api/sessions/${view.session_id}/navigate`, {
           body: { step_id: target },
         });
-        setDraft(updated.answers[target]);
         setStepError(null);
         setView(updated);
       } catch {
@@ -197,7 +206,7 @@ export const FunnelPage = () => {
 
       const params = new URLSearchParams(window.location.search);
       params.set('step', updated.current_step_id);
-      setView(updated);
+      pendingViewRef.current = updated;
       navigate({ search: `?${params.toString()}` });
     } catch (error) {
       setStepError(error instanceof Error ? error.message : 'The answer could not be saved');
@@ -215,7 +224,7 @@ export const FunnelPage = () => {
       const created = await startSession();
       const params = new URLSearchParams(window.location.search);
       params.set('step', created.current_step_id);
-      setView(created);
+      pendingViewRef.current = created;
       navigate({ search: `?${params.toString()}` });
     } catch (error) {
       setFatal(error instanceof Error ? error.message : 'A new session could not be started');
