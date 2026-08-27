@@ -1,8 +1,9 @@
+import { createHash, timingSafeEqual } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { VersionsResponse } from '@funnel/shared';
 import type { Database } from '../db/database.js';
-import { HttpError, badRequest } from '../errors.js';
+import { HttpError, badRequest, notFound } from '../errors.js';
 import { computeAnalytics } from '../domain/analytics.js';
 import {
   activateVersion,
@@ -41,11 +42,16 @@ export const registerAdminRoutes = (
 ): void => {
   const { db, configDir, adminToken } = deps;
 
+  const digest = (value: string): Buffer => createHash('sha256').update(value).digest();
+  const expectedDigest = adminToken ? digest(adminToken) : null;
+
   app.addHook('onRequest', async (request) => {
     if (!request.url.startsWith('/api/admin')) return;
-    if (!adminToken) return;
+    if (!expectedDigest) return;
     const provided = request.headers['x-admin-token'];
-    if (provided !== adminToken) throw new HttpError(401, 'admin token is missing or invalid');
+    if (typeof provided !== 'string' || !timingSafeEqual(digest(provided), expectedDigest)) {
+      throw new HttpError(401, 'admin token is missing or invalid');
+    }
   });
 
   app.get('/api/admin/versions', async (): Promise<VersionsResponse> => ({
@@ -88,6 +94,13 @@ export const registerAdminRoutes = (
     });
 
     return { active_version: activated };
+  });
+
+  app.get('/api/admin/events/:eventId', async (request) => {
+    const { eventId } = request.params as { eventId: string };
+    const row = db.prepare('SELECT * FROM events WHERE event_id = ?').get(eventId);
+    if (!row) throw notFound(`event "${eventId}" not found`);
+    return row;
   });
 
   app.get('/api/admin/analytics', async (request) => {

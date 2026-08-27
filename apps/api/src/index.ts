@@ -19,6 +19,7 @@ const app = await buildServer({
   webDist: appConfig.webDist,
   serveWeb: appConfig.serveWeb,
   logger: true,
+  rateLimitMax: Number.isFinite(appConfig.rateLimitMax) && appConfig.rateLimitMax > 0 ? appConfig.rateLimitMax : null,
 });
 
 await app.listen({ host: appConfig.host, port: appConfig.port });

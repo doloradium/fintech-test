@@ -213,8 +213,16 @@ export const validateAnswer = (step: Step, value: AnswerValue | undefined): stri
     const { min, max, step: increment } = step.input ?? {};
     if (min !== undefined && parsed < min) return message(step, 'min', `Enter a value of at least ${min}.`);
     if (max !== undefined && parsed > max) return message(step, 'max', `Enter a value up to ${max}.`);
-    if (increment !== undefined && increment === 1 && !Number.isInteger(parsed)) {
-      return message(step, 'step', 'Enter a whole number.');
+    if (increment !== undefined && increment > 0) {
+      const base = min ?? 0;
+      const ratio = (parsed - base) / increment;
+      if (Math.abs(ratio - Math.round(ratio)) > 1e-9) {
+        return message(
+          step,
+          'step',
+          increment === 1 ? 'Enter a whole number.' : `Enter a value in increments of ${increment}.`,
+        );
+      }
     }
     return null;
   }

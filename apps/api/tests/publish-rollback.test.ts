@@ -171,6 +171,59 @@ describe('публикация и откат версии', () => {
     expect(back.progress.ratio).toBe(onWorkMode.ratio);
   });
 
+  it('нельзя перепрыгнуть вперёд дальше первого неотвеченного шага', async () => {
+    const session = await createSession(ctx.app, '?variant=A');
+
+    const jumpToEnd = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/sessions/${session.session_id}/navigate`,
+      payload: { step_id: 'result' },
+    });
+    expect(jumpToEnd.statusCode).toBe(400);
+
+    const jumpAhead = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/sessions/${session.session_id}/navigate`,
+      payload: { step_id: 'tool_count' },
+    });
+    expect(jumpAhead.statusCode).toBe(400);
+
+    const untouched = ctx.db
+      .prepare('SELECT current_step_id, completed_at, result_id FROM sessions WHERE id = ?')
+      .get(session.session_id) as { current_step_id: string; completed_at: string | null; result_id: string | null };
+    expect(untouched.current_step_id).toBe('intro');
+    expect(untouched.completed_at).toBeNull();
+    expect(untouched.result_id).toBeNull();
+  });
+
+  it('возврат на отвеченные шаги и на фронтир разрешён', async () => {
+    let view = await createSession(ctx.app, '?variant=A');
+    view = await answer(ctx.app, view.session_id, 'intro', true);
+    view = await answer(ctx.app, view.session_id, 'team_size', 6);
+    expect(view.current_step_id).toBe('work_mode');
+
+    const back = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/sessions/${view.session_id}/navigate`,
+      payload: { step_id: 'intro' },
+    });
+    expect(back.statusCode).toBe(200);
+
+    const forwardToFrontier = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/sessions/${view.session_id}/navigate`,
+      payload: { step_id: 'work_mode' },
+    });
+    expect(forwardToFrontier.statusCode).toBe(200);
+
+    const beyondFrontier = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/sessions/${view.session_id}/navigate`,
+      payload: { step_id: 'priorities' },
+    });
+    expect(beyondFrontier.statusCode).toBe(400);
+  });
+
   it('служебные экраны не участвуют в нумерации шагов', async () => {
     const view = await createSession(ctx.app, '?variant=A');
     expect(stepOf(view, view.current_step_id).type).toBe('info');

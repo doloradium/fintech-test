@@ -2,8 +2,9 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { eventBatchSchema, utmSchema } from '@funnel/shared';
 import type { Database } from '../db/database.js';
-import { badRequest, notFound } from '../errors.js';
+import { badRequest } from '../errors.js';
 import { ingestEvents } from '../domain/ingest.js';
+import { getActiveConfig } from '../domain/versions.js';
 import {
   buildSessionView,
   createSession,
@@ -15,7 +16,7 @@ import {
 
 const createSessionBody = z
   .object({
-    variant: z.enum(['A', 'B']).nullish(),
+    variant: z.string().max(32).nullish(),
     utm: utmSchema.partial().nullish(),
   })
   .nullish();
@@ -29,6 +30,19 @@ const navigateBody = z.object({
   step_id: z.string().min(1),
 });
 
+const normalizeVariantOverride = (
+  config: ReturnType<typeof getActiveConfig>['config'],
+  raw: unknown,
+): string | null => {
+  if (typeof raw !== 'string') return null;
+  const candidate = raw.trim();
+  if (candidate === '') return null;
+  if (Object.hasOwn(config.experiment.variants, candidate)) return candidate;
+  const upper = candidate.toUpperCase();
+  return Object.hasOwn(config.experiment.variants, upper) ? upper : null;
+};
+
+
 export const registerPublicRoutes = (
   app: FastifyInstance,
   deps: { db: Database; experimentSalt: string },
@@ -40,9 +54,11 @@ export const registerPublicRoutes = (
   app.post('/api/sessions', async (request, reply) => {
     const body = createSessionBody.parse(request.body ?? null);
     const query = (request.query ?? {}) as Record<string, unknown>;
-    const queryVariant = typeof query.variant === 'string' ? query.variant.toUpperCase() : null;
-    const override =
-      body?.variant ?? (queryVariant === 'A' || queryVariant === 'B' ? (queryVariant as 'A' | 'B') : null);
+    const { config } = getActiveConfig(db);
+
+    const paramName = config.experiment.overrideQueryParam || 'variant';
+    const rawOverride = body?.variant ?? query[paramName];
+    const override = normalizeVariantOverride(config, rawOverride);
 
     const utm = { ...parseUtm(query), ...(body?.utm ?? {}) };
     const row = createSession(db, { utm, variantOverride: override, salt: experimentSalt });
@@ -83,10 +99,4 @@ export const registerPublicRoutes = (
     return result;
   });
 
-  app.get('/api/events/:eventId', async (request) => {
-    const { eventId } = request.params as { eventId: string };
-    const row = db.prepare('SELECT * FROM events WHERE event_id = ?').get(eventId);
-    if (!row) throw notFound(`event "${eventId}" not found`);
-    return row;
-  });
 };

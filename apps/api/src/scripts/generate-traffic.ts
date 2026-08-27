@@ -166,6 +166,13 @@ const runSession = async (args: Args, random: () => number, stats: Stats): Promi
         const result = view.result_id ? view.funnel.results[view.result_id] : undefined;
         push('cta_clicked', stepId, { result_id: view.result_id, action: result?.cta.action ?? 'primary' });
         stats.ctaClicks += 1;
+
+        if (
+          result?.cta.action === 'expand_recommendation' &&
+          view.funnel.events.allowed.some((event) => event.name === 'recommendation_expanded')
+        ) {
+          push('recommendation_expanded', stepId, { result_id: view.result_id });
+        }
       }
       break;
     }

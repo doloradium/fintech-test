@@ -13,6 +13,8 @@ Environment=HOST=127.0.0.1
 Environment=PORT=3000
 Environment=DATA_DIR=/var/lib/funnel-runtime
 Environment=EXPERIMENT_SALT=CHANGE_ME
+Environment=ADMIN_TOKEN=CHANGE_ME
+Environment=RATE_LIMIT_MAX=3000
 ExecStart=/usr/bin/node --disable-warning=ExperimentalWarning apps/api/dist/index.js
 Restart=always
 RestartSec=3

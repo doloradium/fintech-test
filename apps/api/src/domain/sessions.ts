@@ -213,9 +213,21 @@ export const submitAnswer = (
 export const goToStep = (db: Database, row: SessionRow, stepId: string, at?: string): SessionView => {
   const funnel = getResolvedFunnel(db, row);
   const answers = getAnswers(db, row.id);
+  const path = visibleStepIds(funnel, answers);
+  const targetIndex = path.indexOf(stepId);
 
-  if (!visibleStepIds(funnel, answers).includes(stepId)) {
+  if (targetIndex === -1) {
     throw badRequest(`step "${stepId}" is not part of the current path`);
+  }
+
+  const firstUnanswered = path.findIndex((candidate) => answers[candidate] === undefined);
+  const frontier = firstUnanswered === -1 ? path.length - 1 : firstUnanswered;
+
+  if (targetIndex > frontier) {
+    throw badRequest(`step "${stepId}" is ahead of the furthest answered step`, {
+      step_id: stepId,
+      frontier_step_id: path[frontier],
+    });
   }
 
   setCurrentStep(db, row, funnel, answers, stepId, at ?? new Date().toISOString());

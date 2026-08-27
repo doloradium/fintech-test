@@ -4,6 +4,7 @@ import type { AnalyticsResponse, SegmentMetrics } from '@funnel/shared';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -80,12 +81,16 @@ export const AnalyticsPage = () => {
   const [version, setVersion] = useState(ALL);
   const [variant, setVariant] = useState(ALL);
   const [campaign, setCampaign] = useState(ALL);
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
 
   const load = useCallback(async () => {
     const params = new URLSearchParams();
     if (version !== ALL) params.set('version', version);
     if (variant !== ALL) params.set('variant', variant);
     if (campaign !== ALL) params.set('utm_campaign', campaign === NO_CAMPAIGN ? '' : campaign);
+    if (from) params.set('from', `${from}T00:00:00.000Z`);
+    if (to) params.set('to', `${to}T23:59:59.999Z`);
 
     try {
       const next = await request<AnalyticsResponse>(`/api/admin/analytics?${params.toString()}`, { admin: true });
@@ -94,7 +99,7 @@ export const AnalyticsPage = () => {
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Не удалось загрузить аналитику');
     }
-  }, [campaign, variant, version]);
+  }, [campaign, from, to, variant, version]);
 
   useEffect(() => {
     void load();
@@ -126,7 +131,7 @@ export const AnalyticsPage = () => {
             не увеличивают числа.
           </CardDescription>
         </CardHeader>
-        <CardContent className="grid gap-4 sm:grid-cols-3">
+        <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
           <div className="flex flex-col gap-2">
             <Label htmlFor="f-version">Версия воронки</Label>
             <Select value={version} onValueChange={setVersion}>
@@ -177,7 +182,17 @@ export const AnalyticsPage = () => {
               </SelectContent>
             </Select>
           </div>
-        </CardContent>
+                  <div className="flex flex-col gap-2">
+            <Label htmlFor="f-from">С даты</Label>
+            <Input id="f-from" type="date" value={from} onChange={(event) => setFrom(event.target.value)} />
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="f-to">По дату</Label>
+            <Input id="f-to" type="date" value={to} onChange={(event) => setTo(event.target.value)} />
+          </div>
+
+</CardContent>
       </Card>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">

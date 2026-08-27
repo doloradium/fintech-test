@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import Fastify, { type FastifyInstance } from 'fastify';
 import cors from '@fastify/cors';
+import rateLimit from '@fastify/rate-limit';
 import fastifyStatic from '@fastify/static';
 import { ZodError } from 'zod';
 import type { Database } from './db/database.js';
@@ -18,6 +19,7 @@ export type ServerOptions = {
   webDist: string;
   serveWeb: boolean;
   logger?: boolean;
+  rateLimitMax?: number | null;
 };
 
 export const buildServer = async (options: ServerOptions): Promise<FastifyInstance> => {
@@ -28,6 +30,14 @@ export const buildServer = async (options: ServerOptions): Promise<FastifyInstan
   });
 
   await app.register(cors, { origin: true });
+
+  if (options.rateLimitMax) {
+    await app.register(rateLimit, {
+      max: options.rateLimitMax,
+      timeWindow: '1 minute',
+      allowList: ['127.0.0.1'],
+    });
+  }
 
   app.setErrorHandler((error, _request, reply) => {
     if (error instanceof HttpError) {

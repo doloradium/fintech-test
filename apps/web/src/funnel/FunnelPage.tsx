@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { UTM_KEYS, validateAnswer, type AnswerValue, type SessionView } from '@funnel/shared';
+import { validateAnswer, type AnswerValue, type SessionView } from '@funnel/shared';
 import { ApiError, request } from '@/lib/api';
 import { flush, flushOnUnload, initTracker, track } from '@/lib/tracker';
 import { ResultView } from './ResultView';
@@ -29,13 +29,6 @@ const writeSessionId = (id: string | null): void => {
   } catch {}
 };
 
-const utmFromSearch = (search: string): Record<string, string | null> => {
-  const params = new URLSearchParams(search);
-  const utm: Record<string, string | null> = {};
-  for (const key of UTM_KEYS) utm[key] = params.get(key);
-  return utm;
-};
-
 export const FunnelPage = () => {
   const location = useLocation();
   const navigate = useNavigate();
@@ -53,12 +46,7 @@ export const FunnelPage = () => {
   const pendingViewRef = useRef<SessionView | null>(null);
 
   const startSession = useCallback(async (): Promise<SessionView> => {
-    const params = new URLSearchParams(window.location.search);
-    const variantParam = params.get('variant');
-
-    const created = await request<SessionView>('/api/sessions', {
-      body: { variant: variantParam, utm: utmFromSearch(window.location.search) },
-    });
+    const created = await request<SessionView>(`/api/sessions${window.location.search}`, { method: 'POST' });
 
     writeSessionId(created.session_id);
     initTracker(created.session_id);
@@ -91,6 +79,14 @@ export const FunnelPage = () => {
       }
     })();
   }, [startSession]);
+
+  useEffect(() => {
+    if (!view) return;
+    document.documentElement.lang = view.funnel.locale || 'en';
+    return () => {
+      document.documentElement.lang = 'ru';
+    };
+  }, [view]);
 
   useEffect(() => {
     const onHide = () => flushOnUnload();
@@ -305,6 +301,12 @@ export const FunnelPage = () => {
               result_id: view.result_id,
               action: result?.cta.action ?? 'primary',
             });
+            if (
+              result?.cta.action === 'expand_recommendation' &&
+              view.funnel.events.allowed.some((event) => event.name === 'recommendation_expanded')
+            ) {
+              track('recommendation_expanded', view.current_step_id, { result_id: view.result_id });
+            }
             void flush();
           }}
           onRestart={() => void handleRestart()}

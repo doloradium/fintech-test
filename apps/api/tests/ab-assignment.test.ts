@@ -29,6 +29,19 @@ describe('стабильность A/B-варианта', () => {
     expect((await readSession(ctx.app, forced.session_id)).variant).toBe('B');
   });
 
+  it('мусорный override не ломает создание сессии, а регистр нормализуется', async () => {
+    const lowercase = await createSession(ctx.app, '?variant=b');
+    expect(lowercase.variant).toBe('B');
+    expect(lowercase.variant_source).toBe('override');
+
+    const garbage = await createSession(ctx.app, '?variant=zzz');
+    expect(['A', 'B']).toContain(garbage.variant);
+    expect(garbage.variant_source).toBe('assigned');
+
+    const empty = await createSession(ctx.app, '?variant=');
+    expect(empty.variant_source).toBe('assigned');
+  });
+
   it('распределение задействует оба варианта', async () => {
     const variants = new Set<string>();
     for (let i = 0; i < 40; i += 1) variants.add((await createSession(ctx.app)).variant);

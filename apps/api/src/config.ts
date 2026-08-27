@@ -19,6 +19,7 @@ export const appConfig = {
   webDist: path.resolve(repoRoot, fromEnv('WEB_DIST', 'apps/web/dist')),
   bootstrapConfig: fromEnv('BOOTSTRAP_CONFIG', 'funnel-v1.json'),
   adminToken: process.env.ADMIN_TOKEN ?? null,
+  rateLimitMax: Number(fromEnv('RATE_LIMIT_MAX', '3000')),
   experimentSalt: fromEnv('EXPERIMENT_SALT', 'funnel-runtime'),
   serveWeb: fromEnv('SERVE_WEB', 'true') !== 'false',
 };

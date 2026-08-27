@@ -75,11 +75,34 @@ const scheduleFlush = (): void => {
   }, FLUSH_INTERVAL);
 };
 
+const SEQ_KEY = 'funnel.event_seq';
+
+const readPersistedSeq = (id: string): number => {
+  try {
+    const raw = JSON.parse(window.localStorage.getItem(SEQ_KEY) ?? 'null') as
+      | { session_id?: string; seq?: number }
+      | null;
+    return raw && raw.session_id === id ? Number(raw.seq) || 0 : 0;
+  } catch {
+    return 0;
+  }
+};
+
+const persistSeq = (): void => {
+  try {
+    if (sessionId) window.localStorage.setItem(SEQ_KEY, JSON.stringify({ session_id: sessionId, seq }));
+  } catch {}
+};
+
 export const initTracker = (id: string): void => {
   const restored = readStorage();
   sessionId = id;
   queue = restored.filter((event) => typeof event?.event_id === 'string');
-  seq = queue.reduce((max, event) => Math.max(max, event.seq ?? 0), 0);
+  const queuedSeq = queue.reduce(
+    (max, event) => (event.session_id === id ? Math.max(max, event.seq ?? 0) : max),
+    0,
+  );
+  seq = Math.max(readPersistedSeq(id), queuedSeq);
   if (queue.length > 0) void flush();
 };
 
@@ -102,6 +125,7 @@ export const track = (
   });
 
   writeStorage();
+  persistSeq();
 
   if (queue.length >= MAX_BATCH) void flush();
   else scheduleFlush();
