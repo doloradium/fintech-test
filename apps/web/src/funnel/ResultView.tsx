@@ -1,4 +1,4 @@
-import { ArrowLeft, Check, RotateCcw, Sparkles } from 'lucide-react';
+import { ArrowLeft, Check, ListChecks, RotateCcw, Sparkles } from 'lucide-react';
 import type { SessionView } from '@funnel/shared';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -35,6 +35,9 @@ export const ResultView = ({ view, ctaClicked, onCta, onRestart, onBack }: Props
       candidate.type !== 'info' && candidate.type !== 'result' && view.answers[candidate.id] !== undefined,
   );
 
+  const expandable = result.cta.action === 'expand_recommendation' && result.recommendations.length > 0;
+  const showRecommendations = !expandable || ctaClicked;
+
   return (
     <Card>
       <CardHeader>
@@ -47,14 +50,22 @@ export const ResultView = ({ view, ctaClicked, onCta, onRestart, onBack }: Props
       </CardHeader>
 
       <CardContent className="flex flex-col gap-6">
-        <ul className="flex flex-col gap-3">
-          {result.recommendations.map((line, index) => (
-            <li key={index} className="flex gap-3 text-sm">
-              <Check className="text-primary mt-0.5 size-4 shrink-0" aria-hidden />
-              <span>{line}</span>
-            </li>
-          ))}
-        </ul>
+        {showRecommendations ? (
+          <section className="animate-in fade-in slide-in-from-top-2 flex flex-col gap-3 duration-300">
+            <h2 className="text-muted-foreground flex items-center gap-2 text-xs font-medium tracking-wide uppercase">
+              <ListChecks className="size-3.5" aria-hidden />
+              {result.cta.label}
+            </h2>
+            <ul className="flex flex-col gap-3">
+              {result.recommendations.map((line, index) => (
+                <li key={index} className="flex gap-3 text-sm">
+                  <Check className="text-primary mt-0.5 size-4 shrink-0" aria-hidden />
+                  <span>{line}</span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
 
         {answered.length > 0 ? (
           <>
@@ -87,15 +98,18 @@ export const ResultView = ({ view, ctaClicked, onCta, onRestart, onBack }: Props
             <ArrowLeft />
             Back
           </Button>
-          <Button onClick={onCta} disabled={ctaClicked}>
-            {ctaClicked ? <Check /> : null}
-            {ctaClicked ? 'Opened' : result.cta.label}
-          </Button>
+          {expandable && !ctaClicked ? (
+            <Button onClick={onCta}>
+              <ListChecks />
+              {result.cta.label}
+            </Button>
+          ) : (
+            <Button variant="outline" onClick={onRestart}>
+              <RotateCcw />
+              Start again
+            </Button>
+          )}
         </div>
-        <Button variant="link" size="sm" className="text-muted-foreground self-start" onClick={onRestart}>
-          <RotateCcw />
-          Start again
-        </Button>
       </CardFooter>
     </Card>
   );
