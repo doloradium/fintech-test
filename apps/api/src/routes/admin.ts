@@ -5,6 +5,7 @@ import type { VersionsResponse } from '@funnel/shared';
 import type { Database } from '../db/database.js';
 import { HttpError, badRequest, notFound } from '../errors.js';
 import { computeAnalytics } from '../domain/analytics.js';
+import { generateTraffic } from '../scripts/traffic.js';
 import {
   activateVersion,
   getActiveVersion,
@@ -27,6 +28,13 @@ const publishBody = z
   .refine((body) => body.config != null || body.file != null, {
     message: 'provide either "config" (inline JSON) or "file" (a bundled config file name)',
   });
+
+const seedBody = z
+  .object({
+    sessions: z.coerce.number().int().min(1).max(500).default(100),
+    seed: z.coerce.number().int().nullish(),
+  })
+  .prefault({});
 
 const analyticsQuery = z.object({
   version: z.coerce.number().int().positive().nullish(),
@@ -101,6 +109,25 @@ export const registerAdminRoutes = (
     const row = db.prepare('SELECT * FROM events WHERE event_id = ?').get(eventId);
     if (!row) throw notFound(`event "${eventId}" not found`);
     return row;
+  });
+
+  app.post('/api/admin/seed', async (request) => {
+    const body = seedBody.parse(request.body ?? {});
+    const address = app.server.address();
+
+    if (!address || typeof address === 'string') {
+      throw new HttpError(503, 'the traffic generator needs a listening HTTP server');
+    }
+
+    const started = Date.now();
+    const stats = await generateTraffic({
+      url: `http://127.0.0.1:${address.port}`,
+      sessions: body.sessions,
+      seed: body.seed ?? Date.now() % 2_147_483_647,
+      concurrency: 8,
+    });
+
+    return { elapsed_ms: Date.now() - started, stats };
   });
 
   app.get('/api/admin/analytics', async (request) => {

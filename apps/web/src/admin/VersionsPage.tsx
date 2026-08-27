@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { CheckCircle2, History, Loader2, Rocket, Undo2 } from 'lucide-react';
+import { CheckCircle2, ExternalLink, History, Loader2, Rocket, Undo2 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { VersionsResponse } from '@funnel/shared';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -89,6 +89,8 @@ export const VersionsPage = () => {
   if (error && !data) return <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>;
   if (!data) return <Skeleton className="h-64 w-full rounded-xl" />;
 
+  const activeVersion = data.versions.find((version) => version.is_active);
+
   return (
     <div className="flex flex-col gap-6">
       <div className="grid gap-6 lg:grid-cols-[280px_1fr]">
@@ -97,11 +99,26 @@ export const VersionsPage = () => {
             <CardDescription>Активная версия</CardDescription>
             <CardTitle className="text-5xl tabular-nums">{data.active_version ?? '—'}</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="flex flex-col gap-4">
             <p className="text-muted-foreground text-sm">
               Новые сессии стартуют только на активной версии. Уже начатые остаются на своей&nbsp;— версия
               закрепляется в момент создания сессии.
             </p>
+            {activeVersion ? (
+              <div className="flex flex-col gap-2">
+                <p className="text-muted-foreground text-xs">Открыть воронку активной версии:</p>
+                <div className="flex flex-wrap gap-2">
+                  {activeVersion.variants.map((variant, index) => (
+                    <Button key={index} asChild size="sm" variant="outline">
+                      <a href={`/?variant=${variant.key}`} target="_blank" rel="noreferrer">
+                        <ExternalLink />
+                        Вариант {variant.key}
+                      </a>
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
           </CardContent>
         </Card>
 

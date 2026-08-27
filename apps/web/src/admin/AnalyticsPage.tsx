@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Activity, Filter, ShieldCheck, TrendingDown, TrendingUp } from 'lucide-react';
+import { Activity, Filter, Loader2, ShieldCheck, Sparkles, TrendingDown, TrendingUp } from 'lucide-react';
+import { toast } from 'sonner';
 import type { AnalyticsResponse, SegmentMetrics } from '@funnel/shared';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -83,6 +85,7 @@ export const AnalyticsPage = () => {
   const [campaign, setCampaign] = useState(ALL);
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
+  const [seeding, setSeeding] = useState(false);
 
   const load = useCallback(async () => {
     const params = new URLSearchParams();
@@ -105,6 +108,27 @@ export const AnalyticsPage = () => {
     void load();
   }, [load]);
 
+
+  const seed = async () => {
+    setSeeding(true);
+    try {
+      const result = await request<{ elapsed_ms: number; stats: { sessions: number; accepted: number; rejected: number } }>(
+        '/api/admin/seed',
+        { body: { sessions: 100 }, admin: true },
+      );
+      toast.success(`Сгенерировано ${result.stats.sessions} сессий за ${(result.elapsed_ms / 1000).toFixed(1)} с`, {
+        description: `Принято ${result.stats.accepted} событий, отклонено ${result.stats.rejected}.`,
+      });
+      await load();
+    } catch (seedError) {
+      toast.error('Не удалось сгенерировать трафик', {
+        description: seedError instanceof Error ? seedError.message : undefined,
+      });
+    } finally {
+      setSeeding(false);
+    }
+  };
+
   if (error && !data) return <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>;
   if (!data) {
     return (
@@ -122,14 +146,22 @@ export const AnalyticsPage = () => {
     <div className="flex flex-col gap-6">
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Filter className="size-4" aria-hidden />
-            Фильтры
-          </CardTitle>
-          <CardDescription>
-            Все показатели считаются по уникальным сессиям: повторные просмотры, возвраты назад и дубли событий
-            не увеличивают числа.
-          </CardDescription>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="flex flex-col gap-1.5">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Filter className="size-4" aria-hidden />
+                Фильтры
+              </CardTitle>
+              <CardDescription>
+                Все показатели считаются по уникальным сессиям: повторные просмотры, возвраты назад и дубли событий
+                не увеличивают числа.
+              </CardDescription>
+            </div>
+            <Button variant="outline" size="sm" onClick={() => void seed()} disabled={seeding}>
+              {seeding ? <Loader2 className="animate-spin" /> : <Sparkles />}
+              {seeding ? 'Генерируем…' : 'Сгенерировать 100 тестовых сессий'}
+            </Button>
+          </div>
         </CardHeader>
         <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
           <div className="flex flex-col gap-2">
@@ -349,19 +381,37 @@ export const AnalyticsPage = () => {
               Качество данных
             </CardTitle>
           </CardHeader>
-          <CardContent className="grid grid-cols-2 gap-4 text-sm">
-            {[
-              ['Событий в выборке', data.dataQuality.events],
-              ['Отброшено дублей', data.dataQuality.duplicateAttempts],
-              ['Отклонено некорректных', data.dataQuality.rejectedEvents],
-              ['Пришли не по порядку', data.dataQuality.outOfOrderEvents],
-              ['Сессий с возвратом', data.dataQuality.sessionsWithBack],
-            ].map(([label, value], index) => (
-              <div key={index} className="flex flex-col">
-                <span className="text-muted-foreground text-xs">{label}</span>
-                <span className="text-xl font-medium tabular-nums">{value}</span>
+          <CardContent className="flex flex-col gap-4 text-sm">
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+              {[
+                ['Событий в выборке', data.dataQuality.events],
+                ['Пришли не по порядку', data.dataQuality.outOfOrderEvents],
+                ['Сессий с возвратом', data.dataQuality.sessionsWithBack],
+              ].map(([label, value], index) => (
+                <div key={index} className="flex flex-col">
+                  <span className="text-muted-foreground text-xs">{label}</span>
+                  <span className="text-xl font-medium tabular-nums">{value}</span>
+                </div>
+              ))}
+            </div>
+
+            <div className="bg-muted/40 flex flex-col gap-3 rounded-lg border p-3">
+              <p className="text-muted-foreground text-xs">
+                Счётчики приёма — за всё время работы, фильтры на них не действуют: у отклонённой
+                попытки часто нет ни валидной сессии, ни даты, к которым её можно отнести.
+              </p>
+              <div className="grid grid-cols-2 gap-4">
+                {[
+                  ['Отброшено дублей', data.dataQuality.duplicateAttempts],
+                  ['Отклонено некорректных', data.dataQuality.rejectedEvents],
+                ].map(([label, value], index) => (
+                  <div key={index} className="flex flex-col">
+                    <span className="text-muted-foreground text-xs">{label}</span>
+                    <span className="text-xl font-medium tabular-nums">{value}</span>
+                  </div>
+                ))}
               </div>
-            ))}
+            </div>
           </CardContent>
         </Card>
 
