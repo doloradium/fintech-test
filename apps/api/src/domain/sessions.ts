@@ -246,7 +246,15 @@ export const parseUtm = (query: Record<string, unknown>): Partial<Utm> => {
   const utm: Record<string, string | null> = {};
   for (const key of UTM_KEYS) {
     const value = query[key];
-    utm[key] = typeof value === 'string' && value.trim() !== '' ? value.trim().slice(0, 120) : null;
+    if (typeof value !== 'string') {
+      utm[key] = null;
+      continue;
+    }
+    const cleaned = value
+      .replace(/[\u0000-\u001f\u007f\u200b-\u200f\u2028\u2029]/g, '')
+      .trim()
+      .slice(0, 120);
+    utm[key] = cleaned !== '' ? cleaned : null;
   }
   return utm as Partial<Utm>;
 };

@@ -410,12 +410,16 @@ export const computeAnalytics = (db: Database, query: AnalyticsQuery = {}): Anal
         (query.version != null
           ? db
               .prepare(
-                "SELECT DISTINCT COALESCE(utm_campaign, '') AS v FROM sessions WHERE funnel_version = ? ORDER BY v",
+                `SELECT COALESCE(utm_campaign, '') AS v, COUNT(*) AS n FROM sessions
+                 WHERE funnel_version = ? GROUP BY 1 ORDER BY n DESC, v LIMIT 100`,
               )
               .all(query.version)
-          : db.prepare("SELECT DISTINCT COALESCE(utm_campaign, '') AS v FROM sessions ORDER BY v").all()) as unknown as Array<{
-          v: string;
-        }>
+          : db
+              .prepare(
+                `SELECT COALESCE(utm_campaign, '') AS v, COUNT(*) AS n FROM sessions
+                 GROUP BY 1 ORDER BY n DESC, v LIMIT 100`,
+              )
+              .all()) as unknown as Array<{ v: string }>
       ).map((row) => row.v),
     },
   };

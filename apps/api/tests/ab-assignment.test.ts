@@ -122,6 +122,14 @@ describe('стабильность A/B-варианта', () => {
     expect(union.available.variants.sort()).toEqual(['A', 'B', 'control', 'turbo']);
   });
 
+  it('UTM-метки чистятся от управляющих и невидимых символов', async () => {
+    const dirty = encodeURIComponent('spring\u0000\u200b_sale\u001f');
+    const session = await createSession(ctx.app, `?utm_campaign=${dirty}&utm_source=%20%20`);
+
+    expect(session.utm.utm_campaign).toBe('spring_sale');
+    expect(session.utm.utm_source).toBeNull();
+  });
+
   it('вариант назначается детерминированно: одна и та же сессия даёт тот же бакет', async () => {
     const first = await createSession(ctx.app);
     const reread = await readSession(ctx.app, first.session_id);
