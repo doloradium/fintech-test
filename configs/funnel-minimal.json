@@ -1,0 +1,146 @@
+{
+  "schemaVersion": "1.0",
+  "funnelId": "minimal-smoke",
+  "status": "published",
+  "locale": "ru",
+  "title": "Минимальная воронка для проверки публикации",
+  "description": "Служебный конфиг: минимум, который проходит валидацию. Контент вымышленный.",
+  "experiment": {
+    "id": "minimal-smoke-v1",
+    "assignment": "server",
+    "sticky": true,
+    "overrideQueryParam": "variant",
+    "variants": {
+      "A": {
+        "weight": 50,
+        "stepSequence": ["intro", "pace", "team_size", "tools", "focus", "result"],
+        "stepOverrides": {},
+        "resultOverrides": {}
+      },
+      "B": {
+        "weight": 50,
+        "stepSequence": ["intro", "team_size", "pace", "tools", "focus", "result"],
+        "stepOverrides": {
+          "intro": { "content": { "title": "Вариант B: проверим публикацию" } }
+        },
+        "resultOverrides": {}
+      }
+    }
+  },
+  "steps": {
+    "intro": {
+      "id": "intro",
+      "type": "info",
+      "content": {
+        "title": "Проверочная воронка",
+        "body": "Шесть экранов, ровно столько, сколько требует схема.",
+        "primaryActionLabel": "Начать"
+      }
+    },
+    "pace": {
+      "id": "pace",
+      "type": "single-select",
+      "content": { "title": "Какой темп вам ближе?" },
+      "input": {
+        "name": "pace",
+        "options": [
+          { "value": "calm", "label": "Спокойный" },
+          { "value": "fast", "label": "Быстрый" }
+        ]
+      },
+      "validation": { "required": true, "messages": { "required": "Выберите вариант." } }
+    },
+    "team_size": {
+      "id": "team_size",
+      "type": "number",
+      "content": { "title": "Сколько человек в команде?" },
+      "input": { "name": "team_size", "min": 1, "max": 50, "step": 1, "unit": "чел." },
+      "validation": {
+        "required": true,
+        "messages": {
+          "required": "Введите число.",
+          "min": "Минимум 1.",
+          "max": "Максимум 50."
+        }
+      }
+    },
+    "tools": {
+      "id": "tools",
+      "type": "multi-select",
+      "content": { "title": "Чем пользуетесь?" },
+      "input": {
+        "name": "tools",
+        "options": [
+          { "value": "chat", "label": "Чат" },
+          { "value": "tracker", "label": "Таск-трекер" },
+          { "value": "docs", "label": "Документы" }
+        ]
+      },
+      "validation": {
+        "required": true,
+        "minSelections": 1,
+        "messages": { "minSelections": "Отметьте хотя бы один." }
+      }
+    },
+    "focus": {
+      "id": "focus",
+      "type": "single-select",
+      "content": { "title": "Что важнее прямо сейчас?" },
+      "input": {
+        "name": "focus",
+        "options": [
+          { "value": "speed", "label": "Скорость" },
+          { "value": "quality", "label": "Качество" }
+        ]
+      },
+      "validation": { "required": true, "messages": { "required": "Выберите вариант." } }
+    },
+    "result": {
+      "id": "result",
+      "type": "result",
+      "content": {
+        "loadingTitle": "Считаем…",
+        "errorTitle": "Не получилось построить результат",
+        "retryLabel": "Ещё раз"
+      },
+      "resultSource": "resultRules"
+    }
+  },
+  "resultRules": [
+    { "resultId": "fast_track", "when": { "answer": "pace", "operator": "eq", "value": "fast" } }
+  ],
+  "defaultResultId": "steady_track",
+  "results": {
+    "fast_track": {
+      "id": "fast_track",
+      "title": "Быстрый трек",
+      "summary": "Вымышленная рекомендация для быстрого темпа.",
+      "recommendations": ["Короткие итерации.", "Меньше встреч."],
+      "cta": { "label": "Показать план", "action": "expand_recommendation" }
+    },
+    "steady_track": {
+      "id": "steady_track",
+      "title": "Размеренный трек",
+      "summary": "Вымышленная рекомендация для спокойного темпа.",
+      "recommendations": ["Планируйте неделями.", "Документируйте решения."],
+      "cta": { "label": "Показать план", "action": "expand_recommendation" }
+    }
+  },
+  "events": {
+    "baseProperties": [
+      "event_id", "session_id", "client_timestamp",
+      "funnel_id", "funnel_version", "experiment_id", "variant", "step_id",
+      "utm_source", "utm_medium", "utm_campaign"
+    ],
+    "allowed": [
+      { "name": "session_started", "trigger": "Создана сессия.", "properties": [] },
+      { "name": "step_viewed", "trigger": "Показан шаг.", "properties": ["step_type", "visible_step_index", "visible_step_count"] },
+      { "name": "answer_submitted", "trigger": "Отправлен валидный ответ.", "properties": ["answer_kind"] },
+      { "name": "step_completed", "trigger": "Переход с интерактивного шага.", "properties": ["next_step_id"] },
+      { "name": "back_clicked", "trigger": "Возврат назад.", "properties": ["destination_step_id"] },
+      { "name": "result_viewed", "trigger": "Показан результат.", "properties": ["result_id"] },
+      { "name": "cta_clicked", "trigger": "Клик по CTA.", "properties": ["result_id", "action"] }
+    ],
+    "privacy": { "storeRawAnswers": false, "allowAnswerKinds": true }
+  }
+}
