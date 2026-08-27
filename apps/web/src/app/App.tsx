@@ -27,13 +27,13 @@ export const App = () => {
   return (
     <div className="flex min-h-screen flex-col">
       <header className="bg-background/80 sticky top-0 z-10 border-b backdrop-blur-sm">
-        <div className="mx-auto flex w-full max-w-6xl items-center gap-4 px-4 py-3 sm:px-6">
-          <span className="flex items-center gap-2 font-semibold tracking-tight">
+        <div className="mx-auto flex w-full max-w-6xl items-center gap-3 px-4 py-3 sm:gap-4 sm:px-6">
+          <span className="flex shrink-0 items-center gap-2 font-semibold tracking-tight">
             <Workflow className="size-4" aria-hidden />
-            Funnel Runtime
+            <span className="hidden sm:inline">Funnel Runtime</span>
           </span>
 
-          <nav className="flex flex-1 flex-wrap items-center gap-1">
+          <nav className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
             {NAV.map((item, index) => (
               <NavLink
                 key={index}
@@ -41,7 +41,7 @@ export const App = () => {
                 end={item.end}
                 className={({ isActive }) =>
                   cn(
-                    'text-muted-foreground hover:text-foreground rounded-md px-3 py-1.5 text-sm transition-colors',
+                    'text-muted-foreground hover:text-foreground shrink-0 rounded-md px-3 py-1.5 text-sm whitespace-nowrap transition-colors',
                     isActive && 'bg-accent text-accent-foreground',
                   )
                 }
@@ -51,7 +51,7 @@ export const App = () => {
             ))}
           </nav>
 
-          <Button variant="ghost" size="icon" onClick={toggleTheme} aria-label="Переключить тему">
+          <Button variant="ghost" size="icon" className="shrink-0" onClick={toggleTheme} aria-label="Переключить тему">
             {theme === 'dark' ? <Sun /> : <Moon />}
           </Button>
         </div>

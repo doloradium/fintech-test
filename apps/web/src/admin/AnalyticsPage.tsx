@@ -180,7 +180,7 @@ export const AnalyticsPage = () => {
         </CardContent>
       </Card>
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Kpi label="Начали воронку" value={String(data.overview.sessions)} />
         <Kpi
           label="Дошли до результата"

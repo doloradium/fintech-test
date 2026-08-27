@@ -34,6 +34,7 @@ export const StepView = ({ step, value, error, busy, canGoBack, onChange, onSubm
 
   return (
     <form
+      noValidate
       onSubmit={(event) => {
         event.preventDefault();
         onSubmit();

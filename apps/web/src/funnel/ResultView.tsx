@@ -30,10 +30,10 @@ export const ResultView = ({ view, ctaClicked, onCta, onRestart, onBack }: Props
     );
   }
 
-  const answered = Object.entries(view.answers).filter(([stepId]) => {
-    const answeredStep = view.funnel.steps.find((candidate) => candidate.id === stepId);
-    return answeredStep && answeredStep.type !== 'info' && answeredStep.type !== 'result';
-  });
+  const answered = view.funnel.steps.filter(
+    (candidate) =>
+      candidate.type !== 'info' && candidate.type !== 'result' && view.answers[candidate.id] !== undefined,
+  );
 
   return (
     <Card>
@@ -60,18 +60,18 @@ export const ResultView = ({ view, ctaClicked, onCta, onRestart, onBack }: Props
           <>
             <Separator />
             <dl className="flex flex-col gap-2 text-sm">
-              {answered.map(([stepId, value], index) => {
-                const answeredStep = view.funnel.steps.find((candidate) => candidate.id === stepId);
-                const options = answeredStep?.input?.options ?? [];
+              {answered.map((answeredStep, index) => {
+                const value = view.answers[answeredStep.id];
+                const options = answeredStep.input?.options ?? [];
                 const labelFor = (raw: string): string =>
                   options.find((option) => option.value === raw)?.label ?? raw;
                 const rendered = Array.isArray(value)
                   ? value.map(labelFor).join(', ')
-                  : `${labelFor(String(value ?? '—'))}${answeredStep?.input?.unit ? ` ${answeredStep.input.unit}` : ''}`;
+                  : `${labelFor(String(value ?? '—'))}${answeredStep.input?.unit ? ` ${answeredStep.input.unit}` : ''}`;
 
                 return (
                   <div key={index} className="flex items-baseline justify-between gap-6">
-                    <dt className="text-muted-foreground">{answeredStep?.content.title ?? stepId}</dt>
+                    <dt className="text-muted-foreground">{answeredStep.content.title ?? answeredStep.id}</dt>
                     <dd className="text-right font-medium">{rendered}</dd>
                   </div>
                 );
