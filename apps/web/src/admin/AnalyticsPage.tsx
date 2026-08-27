@@ -139,6 +139,11 @@ export const AnalyticsPage = () => {
     void load();
   }, [load]);
 
+  useEffect(() => {
+    if (!data || variant === ALL) return;
+    if (!data.available.variants.includes(variant)) setVariant(ALL);
+  }, [data, variant]);
+
 
   const seed = async () => {
     setSeeding(true);
@@ -227,8 +232,8 @@ export const AnalyticsPage = () => {
               <SelectContent>
                 <SelectItem value={ALL}>Все варианты</SelectItem>
                 {data.available.variants.map((item, index) => (
-                  <SelectItem key={index} value={item}>
-                    Вариант {item}
+                  <SelectItem key={index} value={item} className="font-mono">
+                    {item}
                   </SelectItem>
                 ))}
               </SelectContent>

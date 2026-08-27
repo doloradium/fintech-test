@@ -121,6 +121,16 @@ const canonicalOrder = (db: Database, query: AnalyticsQuery, seenSteps: Set<stri
   return order;
 };
 
+const configVariantKeys = (db: Database, query: AnalyticsQuery): VariantKey[] | null => {
+  const version = query.version ?? getActiveVersion(db);
+  if (version === null) return null;
+  try {
+    return Object.keys(getConfig(db, version).experiment.variants);
+  } catch {
+    return null;
+  }
+};
+
 export const computeAnalytics = (db: Database, query: AnalyticsQuery = {}): AnalyticsResponse => {
   const filter = buildFilter(query);
 
@@ -327,7 +337,7 @@ export const computeAnalytics = (db: Database, query: AnalyticsQuery = {}): Anal
     filters,
     overview: overviewOf(sessionIds, facts),
     steps,
-    byVariant: groupBy((info) => info.variant, (key) => `Вариант ${key}`),
+    byVariant: groupBy((info) => info.variant, (key) => key),
     byVersion: groupBy((info) => String(info.version), (key) => `Версия ${key}`),
     byCampaign: groupBy((info) => info.campaign, (key) => (key === '(none)' ? 'Без кампании' : key)),
     byResult: [...resultGroups.entries()]
@@ -355,9 +365,11 @@ export const computeAnalytics = (db: Database, query: AnalyticsQuery = {}): Anal
       versions: (
         db.prepare('SELECT DISTINCT funnel_version AS v FROM sessions ORDER BY v').all() as unknown as Array<{ v: number }>
       ).map((row) => Number(row.v)),
-      variants: (
-        db.prepare('SELECT DISTINCT variant AS v FROM sessions ORDER BY v').all() as unknown as Array<{ v: VariantKey }>
-      ).map((row) => row.v),
+      variants:
+        configVariantKeys(db, query) ??
+        (
+          db.prepare('SELECT DISTINCT variant AS v FROM sessions ORDER BY v').all() as unknown as Array<{ v: VariantKey }>
+        ).map((row) => row.v),
       campaigns: (
         db
           .prepare("SELECT DISTINCT COALESCE(utm_campaign, '') AS v FROM sessions ORDER BY v")

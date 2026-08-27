@@ -105,11 +105,15 @@ describe('стабильность A/B-варианта', () => {
     expect(uppercase.variant).toBe('turbo');
     expect(uppercase.variant_source).toBe('override');
 
-    const filtered = json<{ overview: { sessions: number }; byVariant: Array<{ key: string }> }>(
-      (await ctx.app.inject({ method: 'GET', url: '/api/admin/analytics?variant=turbo' })).body,
-    );
+    const filtered = json<{
+      overview: { sessions: number };
+      byVariant: Array<{ key: string; label: string }>;
+      available: { variants: string[] };
+    }>((await ctx.app.inject({ method: 'GET', url: '/api/admin/analytics?variant=turbo' })).body);
     expect(filtered.overview.sessions).toBe(2);
     expect(filtered.byVariant.map((row) => row.key)).toEqual(['turbo']);
+    expect(filtered.byVariant[0]?.label).toBe('turbo');
+    expect(filtered.available.variants.sort()).toEqual(['control', 'turbo']);
   });
 
   it('вариант назначается детерминированно: одна и та же сессия даёт тот же бакет', async () => {
