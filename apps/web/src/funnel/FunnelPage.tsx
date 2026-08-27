@@ -29,6 +29,16 @@ const writeSessionId = (id: string | null): void => {
   } catch {}
 };
 
+const requestedVariantOf = (restored: SessionView): string | null => {
+  const raw = new URLSearchParams(window.location.search).get(restored.funnel.overrideQueryParam || 'variant');
+  if (!raw || raw.trim() === '') return null;
+  const candidate = raw.trim();
+  const keys = restored.funnel.variantKeys;
+  if (keys.includes(candidate)) return candidate;
+  const upper = candidate.toUpperCase();
+  return keys.includes(upper) ? upper : null;
+};
+
 export const FunnelPage = () => {
   const location = useLocation();
   const navigate = useNavigate();
@@ -64,9 +74,14 @@ export const FunnelPage = () => {
         if (stored) {
           try {
             const restored = await request<SessionView>(`/api/sessions/${stored}`);
-            initTracker(restored.session_id);
-            setView(restored);
-            return;
+            const requested = requestedVariantOf(restored);
+            if (requested && requested !== restored.variant) {
+              writeSessionId(null);
+            } else {
+              initTracker(restored.session_id);
+              setView(restored);
+              return;
+            }
           } catch (error) {
             const status = error instanceof ApiError ? error.status : 0;
             if (status !== 404 && status !== 410) throw error;

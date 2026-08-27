@@ -19,6 +19,7 @@ export type ResolvedFunnel = {
   locale: string;
   experimentId: string;
   variant: VariantKey;
+  variantKeys: VariantKey[];
   overrideQueryParam: string;
   steps: Step[];
   results: Record<string, FunnelResult>;
@@ -82,6 +83,7 @@ export const resolveVariant = (config: FunnelConfig, variantKey: VariantKey): Re
     locale: config.locale,
     experimentId: config.experiment.id,
     variant: variantKey,
+    variantKeys: Object.keys(config.experiment.variants),
     overrideQueryParam: config.experiment.overrideQueryParam,
     steps,
     results,
