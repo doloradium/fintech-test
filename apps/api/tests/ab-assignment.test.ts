@@ -111,10 +111,14 @@ describe('стабильность A/B-варианта', () => {
       available: { variants: string[] };
     }>((await ctx.app.inject({ method: 'GET', url: '/api/admin/analytics?version=2&variant=turbo' })).body);
     expect(filtered.overview.sessions).toBe(2);
-    expect(filtered.byVariant.map((row) => row.key)).toEqual(['control', 'turbo']);
-    expect(filtered.byVariant.find((row) => row.key === 'turbo')?.sessions).toBe(2);
-    expect(filtered.byVariant.find((row) => row.key === 'control')?.sessions).toBe(0);
+    expect(filtered.byVariant.map((row) => row.key)).toEqual(['turbo']);
+    expect(filtered.byVariant[0]?.sessions).toBe(2);
     expect(filtered.available.variants.sort()).toEqual(['control', 'turbo']);
+
+    const unfiltered = json<{ byVariant: Array<{ key: string; sessions: number }> }>(
+      (await ctx.app.inject({ method: 'GET', url: '/api/admin/analytics?version=2' })).body,
+    );
+    expect(unfiltered.byVariant.map((row) => row.key)).toEqual(['control', 'turbo']);
 
     const union = json<{ available: { variants: string[] } }>(
       (await ctx.app.inject({ method: 'GET', url: '/api/admin/analytics' })).body,

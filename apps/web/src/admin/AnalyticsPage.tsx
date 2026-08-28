@@ -307,7 +307,11 @@ export const AnalyticsPage = () => {
               ) : null}
               {formatUplift(ctrUplift)}
             </CardTitle>
-            <CardDescription className="text-xs">основная метрика эксперимента</CardDescription>
+            <CardDescription className="text-xs">
+              {variant !== ALL
+                ? 'сравнение недоступно при фильтре по варианту — выберите «Все варианты»'
+                : 'основная метрика эксперимента'}
+            </CardDescription>
           </CardHeader>
         </Card>
       </div>

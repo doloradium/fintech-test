@@ -358,6 +358,7 @@ export const computeAnalytics = (db: Database, query: AnalyticsQuery = {}): Anal
     steps,
     byVariant: (() => {
       const grouped = groupBy((info) => info.variant, (key) => key);
+      if (query.variant != null) return grouped;
       const keys = configVariantKeys(db, query);
       if (!keys) return grouped;
       const byKey = new Map(grouped.map((segment) => [segment.key, segment]));
